@@ -23,6 +23,8 @@ Supporter: Wuerth Phoenix - http://www.wuerth-phoenix.com/
 Official website: http://www.alyvix.com/
 :comment
 
+ver > nul
+
 SET resultdir=
 SET suitefile=
 SET outputdir=
@@ -31,7 +33,7 @@ SET suitename=
 SET checktarget=
 SET outputmsg=
 SET pathavailable=
-SET exitcode=3
+SET exitcode=
 SET logtmp=0
 
 SET suitefile=%1
@@ -96,11 +98,11 @@ IF NOT EXIST %suitefile% (
     ECHO     Optional arguments are:
     ECHO         --test testcase_name
     ECHO         --outputdir log_folder
+    ECHO         --exitcode the_exitcode
     
-    EXIT /B %exitcode%
+    EXIT /B 3
 
 )
-
 
 IF [%testcase%] == [] (
 
@@ -111,23 +113,28 @@ IF [%testcase%] == [] (
     SET checktarget=test case "%testcase%" in test suite "%suitename%"
 )
 
-RD %outputdir%\dummy > NUL 2>&1
-MKDIR %outputdir%\dummy > NUL 2>&1
+IF [%outputdir%] == [] (
+    
+    SET outputdir=%temp%\alyvix_pybot\%suitename%\log
+    SET pathavailable=1
+    SET logtmp=1
 
-IF %ERRORLEVEL% == 0 (
-    IF [%outputdir%] == [] (
+) ELSE (
+
+    if not exist "%outputdir%\dummy\" (
+        MKDIR "%outputdir%\dummy" > NUL 2>&1
+    )
+
+    IF EXIST "%outputdir%\dummy\" (
+        RD %outputdir%\dummy /s /q > NUL 2>&1
+        SET pathavailable=1
+
+    ) ELSE (
         SET pathavailable=0
         SET outputdir=%temp%\alyvix_pybot\%suitename%\log
         SET logtmp=1
-    ) ELSE (
-        SET pathavailable=1
-        rd %outputdir%\dummy
     )
 
-) ELSE (
-    SET pathavailable=0
-    SET outputdir=%temp%\alyvix_pybot\%suitename%\log
-    SET logtmp=1
 )
 
 SET resultdir=%temp%\alyvix_pybot\%suitename%\result
@@ -136,10 +143,10 @@ rem ECHO checktarget = %checktarget%
 rem ECHO resultdir = %resultdir%
 rem ECHO outputdir = %outputdir%
 
-IF EXIST %resultdir% rd %resultdir% /s /q
+IF EXIST %resultdir% rd %resultdir% /s /q > NUL 2>&1
 
 IF EXIST %outputdir% (
-    IF %logtmp%==1 rd %outputdir% /s /q
+    IF %logtmp%==1 rd %outputdir% /s /q > NUL 2>&1
 )
 
 IF NOT EXIST %resultdir% MKDIR %resultdir%
@@ -182,8 +189,8 @@ IF EXIST %resultdir%\exitcode.txt (
     
 )
 
-rd %resultdir% /s /q
+rd %resultdir% /s /q > NUL 2>&1
 
-IF %logtmp%==1 rd %outputdir% /s /q
+IF %logtmp%==1 rd %outputdir% /s /q > NUL 2>&1
 
 EXIT /B %exitcode%

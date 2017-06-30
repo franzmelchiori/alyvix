@@ -190,6 +190,11 @@ def check_window(window_title):
     
     wm = WinManager()
     return wm.check_if_window_exists(window_title)
+
+def get_window_title():
+
+    wm = WinManager()
+    return wm.get_window_title()
     
 def close_window(window_title):
     wm = WinManager()
@@ -214,10 +219,10 @@ def alyvix_screenshot(filename_arg):
 
     logger.info('<a href="' + filename + '"><img src="' + filename + '" width="800px"></a>', html=True)
     
-def add_perfdata(name, value=None, warning_threshold=None, critical_threshold=None, state=0):
+def add_perfdata(name, value=None, warning_threshold=None, critical_threshold=None, state=None, timestamp=False):
     pm = PerfManager()
     #name_lower = str(name).lower().replace(" ", "_")
-    pm.add_perfdata(name, value, warning_threshold, critical_threshold, state)
+    pm.add_perfdata(name, value, warning_threshold, critical_threshold, state, timestamp)
     
 def rename_perfdata(old_name, new_name, warning_threshold="", critical_threshold=""):
     
@@ -280,15 +285,26 @@ def sum_perfdata(*names, **kwargs):
     pm = PerfManager()
     return pm.sum_perfdata(*names, **kwargs)
 
+def set_perfdata_extra(name, extra):
+    pm = PerfManager()
+    pm.set_perfdata_extra(name, extra)
+
+def add_perfdata_tag(perf_name, tag_name, tag_value):
+    pm = PerfManager()
+    pm.add_perfdata_tag(perf_name, tag_name, tag_value)
+
 def store_perfdata(dbname=None):
     db = DbManager()
-    db.store_perfdata(str(dbname))
+    db.store_perfdata(dbname)
 
-def publish_perfdata(type="csv", start_date="", end_date="", filename="",
-                         testcase_name="", max_age=24):
+def publish_perfdata(type="csv", start_date="", end_date="", filename="", testcase_name="", max_age=24, suffix=None,
+                     subject=None, server=None, port=None, measurement="alyvix", max_reconnect_attempts=5,
+                     reconnect_time_wait=2):
     db = DbManager()
     db.publish_perfdata(type=str(type), start_date=str(start_date), end_date=str(end_date), filename=str(filename),
-                        testcase_name=str(testcase_name), max_age=int(max_age))
+                        testcase_name=str(testcase_name), max_age=int(max_age), suffix=str(suffix),
+                        subject=str(subject), server=str(server), port=port, measurement=str(measurement),
+                        max_reconnect_attempts=max_reconnect_attempts, reconnect_time_wait=reconnect_time_wait)
 
 def print_perfdata(message=None, print_output="True"):
 

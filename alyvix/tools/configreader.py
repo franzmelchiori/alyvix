@@ -126,7 +126,7 @@ class ConfigReader():
                 finder_node = self.__global_root_node.getElementsByTagName("finder")[0]
                 thread_interval = float(finder_node.getElementsByTagName("finder_thread_interval")[0].firstChild.nodeValue)
             except:
-                thread_interval = 2.0
+                thread_interval = 0.5 #2.0
 
         return thread_interval
 
@@ -160,7 +160,7 @@ class ConfigReader():
                 finder_node = self.__global_root_node.getElementsByTagName("finder")[0]
                 diff_interval = float(finder_node.getElementsByTagName("check_diff_interval")[0].firstChild.nodeValue)
             except:
-                diff_interval = 0.25
+                diff_interval = 0.1 #0.25
 
         return diff_interval
 
@@ -193,7 +193,7 @@ class ConfigReader():
                 finder_node = self.__global_root_node.getElementsByTagName("finder")[0]
                 thread_interval = float(finder_node.getElementsByTagName("finder_thread_interval_disappear")[0].firstChild.nodeValue)
             except:
-                thread_interval = 2.0
+                thread_interval = 0.5 #2.0
 
         return thread_interval
 
@@ -227,7 +227,7 @@ class ConfigReader():
                 finder_node = self.__global_root_node.getElementsByTagName("finder")[0]
                 diff_interval = float(finder_node.getElementsByTagName("check_diff_interval_disappear")[0].firstChild.nodeValue)
             except:
-                diff_interval = 0.25
+                diff_interval = 0.1 #0.25
 
         return diff_interval
     
@@ -260,9 +260,57 @@ class ConfigReader():
                 finder_node = self.__global_root_node.getElementsByTagName("finder")[0]
                 timeout_value = float(finder_node.getElementsByTagName("wait_timeout")[0].firstChild.nodeValue)
             except:
-                timeout_value = 15.0
+                timeout_value = 20.0
 
         return timeout_value
+
+    def get_bg_res_check(self):
+        """
+        get the value of alyvix background resolution check section
+        default value is True.
+
+        :rtype: bool
+        :return: True or False
+        """
+
+        timeout_value = None
+
+        try:
+            finder_node = self.__testcase_root_node.getElementsByTagName("finder")[0]
+            if finder_node.getElementsByTagName("bg_res_check")[0].firstChild.nodeValue.lower() == "false":
+                bg_res_check_value = False
+            elif finder_node.getElementsByTagName("bg_res_check")[0].firstChild.nodeValue.lower() == "true":
+                bg_res_check_value = True
+            else:
+                bg_res_check_value = None
+        except:
+            bg_res_check_value = None
+
+        if bg_res_check_value is None:
+            try:
+                finder_node = self.__user_root_node.getElementsByTagName("finder")[0]
+                if finder_node.getElementsByTagName("bg_res_check")[0].firstChild.nodeValue.lower() == "false":
+                    bg_res_check_value = False
+                elif finder_node.getElementsByTagName("bg_res_check")[0].firstChild.nodeValue.lower() == "true":
+                    bg_res_check_value = True
+                else:
+                    bg_res_check_value = None
+            except:
+                bg_res_check_value = None
+
+        if bg_res_check_value is None:
+            try:
+                finder_node = self.__global_root_node.getElementsByTagName("finder")[0]
+                if finder_node.getElementsByTagName("bg_res_check")[0].firstChild.nodeValue.lower() == "false":
+                    bg_res_check_value = False
+                elif finder_node.getElementsByTagName("bg_res_check")[0].firstChild.nodeValue.lower() == "true":
+                    bg_res_check_value = True
+                else:
+                    bg_res_check_value = None
+            except:
+                bg_res_check_value = True
+
+        return bg_res_check_value
 
     def get_log_folder(self):
         """

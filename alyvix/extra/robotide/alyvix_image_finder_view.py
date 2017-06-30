@@ -25,6 +25,7 @@ import time
 import cv2
 import copy
 import codecs
+import shutil
 
 import time
 
@@ -57,11 +58,11 @@ class AlyvixImageFinderView(QWidget):
         self.find = False
         self.wait_disapp = False
         self.args_number = 0
-        self.timeout = 60
+        self.timeout = 20
         self.timeout_exception = True
         self.enable_performance = True
-        self.warning = 15.00
-        self.critical = 40.00
+        self.warning = 10.00
+        self.critical = 15.00
         
         self.mouse_or_key_is_set = False
         
@@ -112,8 +113,21 @@ class AlyvixImageFinderView(QWidget):
         #self.update_path_and_name(path)
         
         self.build_objects()
+        self.old_mouse_or_key_is_set = self.mouse_or_key_is_set
         self.__old_code = self.get_old_code()
         self.__old_code_v220 = self.get_old_code_v220()
+        self.__old_code_v230 = self.get_old_code_v230()
+        self.mouse_or_key_is_set = self.old_mouse_or_key_is_set
+        
+        """
+        text_file = open("c:\\alylog\\old_code.txt", "w")
+
+        text_file.write(self.__old_code_v230)
+
+        text_file.close()
+        """
+        
+
         #print self.__old_code
         
         self._old_main_template = copy.deepcopy(self._main_template)
@@ -161,20 +175,7 @@ class AlyvixImageFinderView(QWidget):
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_Z: 
             
-            if self.last_xy_offset_index != None:
-            
-                if self.last_xy_offset_index == -1:
-                    self._main_template.x_offset = None
-                    self._main_template.y_offset = None
-                else:
-                    self._sub_templates_finder[self.last_xy_offset_index].x_offset = None
-                    self._sub_templates_finder[self.last_xy_offset_index].y_offset = None
-            
-                self.set_xy_offset = self.last_xy_offset_index
-                self.last_xy_offset_index = None
-                
-                self.update()
-            else:
+            if self.set_xy_offset is None:
                 self.delete_rect()
                 
         if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_Y:
@@ -182,12 +183,39 @@ class AlyvixImageFinderView(QWidget):
         if event.key() == Qt.Key_Escape:
             if self._main_template is None and self.esc_pressed is False:
                 self.esc_pressed = True
+                try:
+                    self.image_view_properties.close()
+                except:
+                    pass
                 self.parent.show()
                 self.close()
                 
-        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_O and self.set_xy_offset is None:
-            self.image_view_properties = AlyvixImageFinderPropertiesView(self)
-            self.image_view_properties.show()
+        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_O: #and self.set_xy_offset is None:
+        
+            if len(self._sub_templates_finder) == 0 and self._main_template is None:
+                try:
+                    self.image_view_properties.close()
+                except:
+                    pass
+                self.parent.show()
+                self.close()
+            else:
+            
+                if len(self._sub_templates_finder) > 0:
+            
+                    index = -1 #self.__index_deleted_rect_inside_roi
+                    if self._sub_templates_finder[index].x == 0 and self._sub_templates_finder[index].y == 0 \
+                        and self._sub_templates_finder[index].width == 0 and self._sub_templates_finder[index].height == 0:
+                        
+                        del self._sub_templates_finder[-1]
+                        self.__flag_need_to_delete_roi = False
+                        self.__flag_need_to_restore_roi = True
+                        self.__flag_capturing_sub_image_rect_roi = True
+                        self.__flag_capturing_sub_template = False
+        
+                self.set_xy_offset = None
+                self.image_view_properties = AlyvixImageFinderPropertiesView(self)
+                self.image_view_properties.show()
             """
             self.parent.show()
             self.close()
@@ -246,6 +274,19 @@ class AlyvixImageFinderView(QWidget):
             #self.BringWindowToFront()
             return
         if self.is_mouse_inside_rect(self._main_template) and self.set_xy_offset is None:
+        
+            if len(self._sub_templates_finder) > 0:
+            
+                index = -1 #self.__index_deleted_rect_inside_roi
+                if self._sub_templates_finder[index].x == 0 and self._sub_templates_finder[index].y == 0 \
+                    and self._sub_templates_finder[index].width == 0 and self._sub_templates_finder[index].height == 0:
+                    
+                    del self._sub_templates_finder[-1]
+                    self.__flag_need_to_delete_roi = False
+                    self.__flag_need_to_restore_roi = True
+                    self.__flag_capturing_sub_image_rect_roi = True
+                    self.__flag_capturing_sub_template = False
+            
             self.image_view_properties = AlyvixImageFinderPropertiesView(self)
             self.image_view_properties.show()
         
@@ -272,7 +313,7 @@ class AlyvixImageFinderView(QWidget):
             
             if self.set_xy_offset is not None:
                 self.last_xy_offset_index = self.set_xy_offset
-                self.set_xy_offset = None
+                #self.set_xy_offset = None
             
             elif self.__flag_capturing_main_image_rect is True:
                 self.last_xy_offset_index = None
@@ -675,7 +716,7 @@ class AlyvixImageFinderView(QWidget):
         if len(self._sub_templates_finder) > 0:
             
             index = -1 #self.__index_deleted_rect_inside_roi
-            if  self.__flag_need_to_delete_roi is False and self._sub_templates_finder[index].x != 0 and self._sub_templates_finder[index].y != 0 \
+            if self._sub_templates_finder[index].x != 0 and self._sub_templates_finder[index].y != 0 \
                 and self._sub_templates_finder[index].width != 0 and self._sub_templates_finder[index].height != 0:
                 
                 self._sub_templates_finder[index].deleted_x = self._sub_templates_finder[index].x
@@ -757,6 +798,20 @@ class AlyvixImageFinderView(QWidget):
         
     def remove_code_from_py_file(self):
     
+        template_image_path = template_image_path = get_python_lib() + os.sep + "alyvix" + os.sep + "robotproxy" + os.sep + self._path.split(os.sep)[-1] + "_extra" + os.sep + self.object_name
+        
+        shutil.rmtree(template_image_path)
+        
+        """
+        filelist = [f for f in os.listdir( template_image_path)]
+        for f in filelist:
+            try:
+                os.remove(template_image_path + os.sep + f)
+            except:
+                pass
+        os.remove(template_image_path)
+        """
+    
         file_code_string = ""
         filename = self._alyvix_proxy_path + os.sep + "AlyvixProxy" + self._robot_file_name + ".py"
         
@@ -772,6 +827,7 @@ class AlyvixImageFinderView(QWidget):
         #current_code_string = current_code_string.replace(os.linesep + os.linesep, os.linesep)
         
         file_code_string = file_code_string.replace(unicode(self.__old_code_v220, 'utf-8'), "")
+        file_code_string = file_code_string.replace(unicode(self.__old_code_v230, 'utf-8'), "")
         file_code_string = file_code_string.replace(unicode(self.__old_code, 'utf-8'), "")
         
         string = file_code_string
@@ -815,7 +871,18 @@ class AlyvixImageFinderView(QWidget):
             file_code_string = file_code_string + current_code_string
         elif self.action == "edit":
             file_code_string = file_code_string.replace(unicode(self.__old_code_v220, 'utf-8'), current_code_string)
+            file_code_string = file_code_string.replace(unicode(self.__old_code_v230, 'utf-8'), current_code_string)
             file_code_string = file_code_string.replace(unicode(self.__old_code, 'utf-8'), current_code_string)
+            
+            """
+            text_file = open("c:\\alylog\\new_code.txt", "w")
+
+            text_file.write(current_code_string)
+
+            text_file.close()
+            """
+            
+
             """
             print self.__old_code
             print "---"
@@ -843,6 +910,13 @@ class AlyvixImageFinderView(QWidget):
             return "".encode('utf-8')
         
         self.build_code_array_v220()
+        return self.build_code_string()
+        
+    def get_old_code_v230(self):
+        if self._main_template is None:
+            return "".encode('utf-8')
+        
+        self.build_code_array_v230()
         return self.build_code_string()
     
     def build_code_string(self):
@@ -991,8 +1065,10 @@ class AlyvixImageFinderView(QWidget):
                 
             self._code_lines.append("    time.sleep(2)")
                                 
-            if self._main_template.click == True:
+            if self._main_template.click == True and self._main_template.number_of_clicks == 1:
                 self._code_lines.append("    m.click(main_template_pos.x + (main_template_pos.width/2), main_template_pos.y + (main_template_pos.height/2), 1)")
+            elif self._main_template.click == True and self._main_template.number_of_clicks == 2:
+                self._code_lines.append("    m.click(main_template_pos.x + (main_template_pos.width/2), main_template_pos.y + (main_template_pos.height/2), 1, 2)")
             elif self._main_template.rightclick == True:
                 self._code_lines.append("    m.click(main_template_pos.x + (main_template_pos.width/2), main_template_pos.y + (main_template_pos.height/2), 2)")
             elif self._main_template.mousemove == True:
@@ -1024,8 +1100,10 @@ class AlyvixImageFinderView(QWidget):
                         mmanager_declared = True
                     self._code_lines.append("    time.sleep(2)")
                                         
-                    if sub_template.click == True:
+                    if sub_template.click == True and sub_template.number_of_clicks == 1:
                         self._code_lines.append("    m.click(sub_template_" + str(cnt) + "_pos.x + (sub_template_" + str(cnt) + "_pos.width/2), sub_template_" + str(cnt) + "_pos.y + (sub_template_" + str(cnt) + "_pos.height/2), 1)")
+                    elif sub_template.click == True and sub_template.number_of_clicks == 2:
+                        self._code_lines.append("    m.click(sub_template_" + str(cnt) + "_pos.x + (sub_template_" + str(cnt) + "_pos.width/2), sub_template_" + str(cnt) + "_pos.y + (sub_template_" + str(cnt) + "_pos.height/2), 1, 2)")
                     elif sub_template.rightclick == True:
                         self._code_lines.append("    m.click(sub_template_" + str(cnt) + "_pos.x + (sub_template_" + str(cnt) + "_pos.width/2), sub_template_" + str(cnt) + "_pos.y + (sub_template_" + str(cnt) + "_pos.height/2), 2)")
                     elif sub_template.mousemove == True:
@@ -1129,8 +1207,8 @@ class AlyvixImageFinderView(QWidget):
         for element in self._code_lines:
             print element
         """ 
-    
-    def build_code_array(self):
+        
+    def build_code_array_v230(self):
     
         self.mouse_or_key_is_set = False
     
@@ -1145,7 +1223,7 @@ class AlyvixImageFinderView(QWidget):
             
         name = self.object_name
         
-        if name == "" and self.ok_pressed is True:
+        if name == "":
             name = time.strftime("image_finder_%d_%m_%y_%H_%M_%S")
             self.object_name = name
             
@@ -1227,6 +1305,402 @@ class AlyvixImageFinderView(QWidget):
         self._code_lines.append("    info_manager = InfoManager()")
         self._code_lines.append("    sleep_factor = info_manager.get_info(\"ACTIONS DELAY\")")  
         
+        if self._main_template.click == True or self._main_template.doubleclick == True or self._main_template.rightclick == True or self._main_template.mousemove == True:
+            self.mouse_or_key_is_set = True
+            self._code_lines.append("    main_template_pos = " + name + "_object.get_result(0)")  
+        
+            if mmanager_declared is False:
+                self._code_lines.append("    m = MouseManager()")
+                mmanager_declared = True
+                
+            self._code_lines.append("    time.sleep(sleep_factor)")
+                                
+            if self._main_template.click == True and self._main_template.number_of_clicks == 1:
+                self._code_lines.append("    m.click(main_template_pos.x + (main_template_pos.width/2), main_template_pos.y + (main_template_pos.height/2), 1)")
+            elif self._main_template.click == True and self._main_template.number_of_clicks == 2:
+                self._code_lines.append("    m.click(main_template_pos.x + (main_template_pos.width/2), main_template_pos.y + (main_template_pos.height/2), 1, 2)")
+            elif self._main_template.rightclick == True:
+                self._code_lines.append("    m.click(main_template_pos.x + (main_template_pos.width/2), main_template_pos.y + (main_template_pos.height/2), 2)")
+            elif self._main_template.mousemove == True:
+                self._code_lines.append("    m.move(main_template_pos.x + (main_template_pos.width/2), main_template_pos.y + (main_template_pos.height/2))")
+
+                
+        if self._main_template.sendkeys != "":
+            self.mouse_or_key_is_set = True
+            if kmanager_declared is False:
+                self._code_lines.append("    k  = KeyboardManager()")
+                kmanager_declared = True
+            keys = unicode(self._main_template.sendkeys, 'utf-8')
+            self._code_lines.append("    time.sleep(sleep_factor)")
+            
+            if self._main_template.sendkeys_quotes is True:
+                self._code_lines.append("    k.send(\"" + keys + "\", encrypted=" + str(self._main_template.text_encrypted) + ")")
+            else:
+                self._code_lines.append("    k.send(" + keys + ", encrypted=" + str(self._main_template.text_encrypted) + ")")
+                
+        cnt = 0
+        for sub_template in self._sub_templates_finder:
+        
+            if sub_template.height != 0 and sub_template.width !=0:
+                if sub_template.click == True or sub_template.doubleclick == True or sub_template.rightclick == True or sub_template.mousemove == True:
+            
+                    self.mouse_or_key_is_set = True
+            
+                    self._code_lines.append("    sub_template_" + str(cnt) + "_pos = " + name + "_object.get_result(0, " + str(cnt) + ")")  
+                
+                    if mmanager_declared is False:
+                        self._code_lines.append("    m = MouseManager()")
+                        mmanager_declared = True
+                    self._code_lines.append("    time.sleep(sleep_factor)")
+                                        
+                    if sub_template.click == True and sub_template.number_of_clicks == 1:
+                        self._code_lines.append("    m.click(sub_template_" + str(cnt) + "_pos.x + (sub_template_" + str(cnt) + "_pos.width/2), sub_template_" + str(cnt) + "_pos.y + (sub_template_" + str(cnt) + "_pos.height/2), 1)")
+                    elif sub_template.click == True and sub_template.number_of_clicks == 2:
+                        self._code_lines.append("    m.click(sub_template_" + str(cnt) + "_pos.x + (sub_template_" + str(cnt) + "_pos.width/2), sub_template_" + str(cnt) + "_pos.y + (sub_template_" + str(cnt) + "_pos.height/2), 1, 2)")
+                    elif sub_template.rightclick == True:
+                        self._code_lines.append("    m.click(sub_template_" + str(cnt) + "_pos.x + (sub_template_" + str(cnt) + "_pos.width/2), sub_template_" + str(cnt) + "_pos.y + (sub_template_" + str(cnt) + "_pos.height/2), 2)")
+                    elif sub_template.mousemove == True:
+                        self._code_lines.append("    m.move(sub_template_" + str(cnt) + "_pos.x + (sub_template_" + str(cnt) + "_pos.width/2), sub_template_" + str(cnt) + "_pos.y + (sub_template_" + str(cnt) + "_pos.height/2))")
+                        
+                if sub_template.sendkeys != "":
+                
+                    self.mouse_or_key_is_set = True
+                
+                    if kmanager_declared is False:
+                        self._code_lines.append("    k  = KeyboardManager()")
+                        kmanager_declared = True
+                    keys = unicode(sub_template.sendkeys, 'utf-8')
+                    self._code_lines.append("    time.sleep(sleep_factor)")
+                    
+                    if sub_template.sendkeys_quotes is True:
+                        self._code_lines.append("    k.send(\"" + keys + "\", encrypted=" + str(sub_template.text_encrypted) + ")")
+                    else:
+                        self._code_lines.append("    k.send(" + keys + ", encrypted=" + str(sub_template.text_encrypted) + ")")
+                                    
+                cnt = cnt + 1
+        
+        self._code_lines.append("")
+        
+        string_function_args = "def " + name + "("
+        
+        args_range = range(1, self.args_number + 1)
+        
+        for arg_num in args_range:
+            string_function_args = string_function_args + "arg" + str(arg_num) + ", " 
+        
+        if string_function_args.endswith(", "):
+            string_function_args = string_function_args[:-2]
+        string_function_args = string_function_args + "):"
+        self._code_lines.append(string_function_args)
+        
+        self._code_lines.append("    global " + name + "_object")  
+        
+        string_function_args = "    " + name + "_build_object("
+        
+        args_range = range(1, self.args_number + 1)
+        
+        for arg_num in args_range:
+            string_function_args = string_function_args + "arg" + str(arg_num) + ", " 
+        
+        if string_function_args.endswith(", "):
+            string_function_args = string_function_args[:-2]
+        string_function_args = string_function_args + ")"
+        self._code_lines.append(string_function_args)
+
+        if self.find is True:  
+            self._code_lines.append("    " + name + "_object.find()")
+        elif self.wait is True or self.mouse_or_key_is_set is True:
+            self._code_lines.append("    timeout = " + str(self.timeout))
+            self._code_lines.append("    wait_time = " + name + "_object.wait(timeout)")
+        elif self.wait_disapp is True:
+            self._code_lines.append("    timeout = " + str(self.timeout))
+            self._code_lines.append("    wait_time = " + name + "_object.wait_disappear(timeout)")
+           
+        if self.enable_performance is True and self.find is False:
+            self._code_lines.append("    if wait_time == -1:")
+            if self.timeout_exception is True:
+                self._code_lines.append("        raise Exception(\"step " + str(self.object_name) + " timed out, execution time: " + str(self.timeout) + "\")")         
+            else:
+                self._code_lines.append("        print \"*WARN* step " + str(self.object_name) + " timed out, execution time: " + str(self.timeout) + "\"")
+                self._code_lines.append("        return False")
+            if self.wait_disapp is True and self.mouse_or_key_is_set is True:
+                pass
+            else:
+                self._code_lines.append("    elif wait_time < " + repr(self.warning) + ":")
+                self._code_lines.append("        print \"step " + self.object_name + " is ok, execution time:\", wait_time, \"sec.\"")
+                self._code_lines.append("    elif wait_time < " + repr(self.critical) + ":")
+                self._code_lines.append("        print \"*WARN* step " + str(self.object_name) + " has exceeded the performance warning threshold:\", wait_time, \"sec.\"")
+                self._code_lines.append("    else:")
+                self._code_lines.append("        print \"*WARN* step " + str(self.object_name) + " has exceeded the performance critical threshold:\", wait_time, \"sec.\"")
+                self._code_lines.append("    p = PerfManager()")
+                self._code_lines.append("    p.add_perfdata(\"" + str(self.object_name) + "\", wait_time, " + repr(self.warning) + ", " + repr(self.critical) + ")")
+        elif self.find is False:
+            self._code_lines.append("    if wait_time == -1:")
+            if self.timeout_exception is True:
+                self._code_lines.append("        raise Exception(\"step " + str(self.object_name) + " timed out, execution time: " + str(self.timeout) + "\")")            
+            else:
+                self._code_lines.append("        print \"*WARN* step " + str(self.object_name) + " timed out, execution time: " + str(self.timeout) + "\"")
+                self._code_lines.append("        return False")  
+            #self._code_lines.append("        raise Exception(\"step " + str(self.object_name) + " timed out, execution time: " + str(self.timeout) + "\")")
+        
+        string_function_args = "    " + name + "_mouse_keyboard("
+        
+        args_range = range(1, self.args_number + 1)
+        
+        for arg_num in args_range:
+            string_function_args = string_function_args + "arg" + str(arg_num) + ", " 
+        
+        if string_function_args.endswith(", "):
+            string_function_args = string_function_args[:-2]
+        string_function_args = string_function_args + ")"
+        self._code_lines.append(string_function_args)
+        
+        if self.wait_disapp is True and self.mouse_or_key_is_set is True:
+            #timeout = " + str(self.timeout)
+            self._code_lines.append("    timeout = timeout - wait_time")
+            self._code_lines.append("    wait_time_disappear = " + name + "_object.wait_disappear(timeout)")
+            if self.enable_performance is True and self.find is False:
+                self._code_lines.append("    if wait_time_disappear == -1:")
+                if self.timeout_exception is True:
+                    self._code_lines.append("        raise Exception(\"step " + str(self.object_name) + " timed out, execution time: " + str(self.timeout) + "\")")             
+                else:
+                    self._code_lines.append("        print \"*WARN* step " + str(self.object_name) + " timed out, execution time: " + str(self.timeout) + "\"")
+                    self._code_lines.append("        return False")
+                self._code_lines.append("    elif wait_time + wait_time_disappear < " + repr(self.warning) + ":")
+                self._code_lines.append("        print \"step " + self.object_name + " is ok, execution time:\", wait_time + wait_time_disappear, \"sec.\"")
+                self._code_lines.append("    elif wait_time + wait_time_disappear < " + repr(self.critical) + ":")
+                self._code_lines.append("        print \"*WARN* step " + str(self.object_name) + " has exceeded the performance warning threshold:\", wait_time + wait_time_disappear, \"sec.\"")
+                self._code_lines.append("    else:")
+                self._code_lines.append("        print \"*WARN* step " + str(self.object_name) + " has exceeded the performance critical threshold:\", wait_time + wait_time_disappear, \"sec.\"")
+                self._code_lines.append("    p = PerfManager()")
+                self._code_lines.append("    p.add_perfdata(\"" + str(self.object_name) + "\", wait_time + wait_time_disappear, " + repr(self.warning) + ", " + repr(self.critical) + ")")
+            elif self.find is False:
+                self._code_lines.append("    if wait_time_disappear == -1:")
+                if self.timeout_exception is True:
+                    self._code_lines.append("        raise Exception(\"step " + str(self.object_name) + " timed out, execution time: " + str(self.timeout) + "\")")             
+                else:
+                    self._code_lines.append("        print \"*WARN* step " + str(self.object_name) + " timed out, execution time: " + str(self.timeout) + "\"")
+                    self._code_lines.append("        return False")  
+                #self._code_lines.append("        raise Exception(\"step " + str(self.object_name) + " timed out, execution time: " + str(self.timeout) + "\")")
+            
+            
+        if self.timeout_exception is False:
+            self._code_lines.append("    return True")
+        self._code_lines.append("")
+        self._code_lines.append("")
+
+        #x = 2
+        
+        #tmp_array =  self._code_lines[:x] + ["aaaaaaaaa"] +  self._code_lines[x:]
+        
+        #self._code_lines = tmp_array
+
+        """
+        for element in self._code_lines:
+            print element
+        """ 
+
+    
+    def build_code_array(self):
+    
+        self.mouse_or_key_is_set = False
+    
+        kmanager_declared = False
+        mmanager_declared = False
+       
+        if self._main_template is None:
+            return
+            
+        self._code_lines = []
+        self._code_lines_for_object_finder = []
+            
+        name = self.object_name
+        
+        if name == "" and self.ok_pressed is True:
+            name = time.strftime("image_finder_%d_%m_%y_%H_%M_%S")
+            self.object_name = name
+            
+        strcode = name + "_object = None"
+        self._code_lines.append(strcode)
+        self._code_lines_for_object_finder.append(strcode)
+
+        self._code_lines.append("")
+        
+        string_function_args = "def " + name + "_build_object("
+        
+        args_range = range(1, self.args_number + 1)
+        
+        for arg_num in args_range:
+            string_function_args = string_function_args + "arg" + str(arg_num) + ", " 
+        
+        if string_function_args.endswith(", "):
+            string_function_args = string_function_args[:-2]
+        string_function_args = string_function_args + "):"
+        self._code_lines.append(string_function_args)
+        
+        self._code_lines.append("    global " + name + "_object")  
+        self._code_lines.append("    " + name + "_object = ImageFinder(\"" + name + "\")")
+
+        template_image_path = self._path + os.sep + name
+        
+        #self._main_template.path = template_image_path + os.sep + "main_template.png"
+        template_image_path = "alyvix" + os.sep + os.sep  + "robotproxy" + os.sep + os.sep + self._path.split(os.sep)[-1] + "_extra" + os.sep + os.sep + name
+        self._main_template.path = template_image_path + os.sep + "main_template.png"
+       
+        #self._main_template.path = self._main_template.path.replace("\\","\\\\")
+        
+        strcode = "    "  + name + "_object.set_main_component({\"path\": get_python_lib() + os.sep + \"" + self._main_template.path + "\", \"threshold\":" + repr(self._main_template.threshold) + "})"
+        
+        self._code_lines.append(strcode)
+        self._code_lines_for_object_finder.append(strcode)
+        
+        #self._code_lines.append("\n")
+        
+        if self._main_template.click == True or self._main_template.rightclick == True or self._main_template.mousemove == True or self._main_template.hold_and_release is not None:
+            if self._main_template.x_offset is None and self._main_template.y_offset is None: 
+                if self._main_template.hold_and_release is not None:
+                    if self._main_template.hold_and_release == 0:
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0, 0, False)")
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = None")
+                    elif self._main_template.hold_and_release == 1:
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0, 0, False)")
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = None")
+                    elif self._main_template.hold_and_release == 2:
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0, 0, False)")
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = (0, 0 - " + str(self._main_template.release_pixel) + ", False)")
+                    elif self._main_template.hold_and_release == 3:
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0, 0, False)")
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = (0, 0 + " + str(self._main_template.release_pixel) + ", False)")
+                    elif self._main_template.hold_and_release == 4:
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0, 0, False)")
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = (0 - " + str(self._main_template.release_pixel) + ", 0, False)")
+                    elif self._main_template.hold_and_release == 5:
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0, 0, False)")
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = (0 + " + str(self._main_template.release_pixel) + ", 0, False)")
+                else:
+                    self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0, 0, False)")
+                    self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = None")
+            else:
+                if self._main_template.hold_and_release is not None:
+                    if self._main_template.hold_and_release == 0:
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0 + (" + str(self._main_template.x_offset) + "), 0 + (" + str(self._main_template.y_offset) + "), True)")
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = None")
+                    elif self._main_template.hold_and_release == 1:
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0 + (" + str(self._main_template.x_offset) + "), 0 + (" + str(self._main_template.y_offset) + "), True)")
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = None")
+                    elif self._main_template.hold_and_release == 2:
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0 + (" + str(self._main_template.x_offset) + "), 0 + (" + str(self._main_template.y_offset) + "), True)")
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = (0 + (" + str(self._main_template.x_offset) + "), 0 + (" + str(self._main_template.y_offset) + ") - " + str(self._main_template.release_pixel) + ", True)")
+                    elif self._main_template.hold_and_release == 3:
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0 + (" + str(self._main_template.x_offset) + "), 0 + (" + str(self._main_template.y_offset) + "), True)")
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = (0 + (" + str(self._main_template.x_offset) + "), 0 + (" + str(self._main_template.y_offset) + ") + " + str(self._main_template.release_pixel) + ", True)")
+                    elif self._main_template.hold_and_release == 4:
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0 + (" + str(self._main_template.x_offset) + "), 0 + (" + str(self._main_template.y_offset) + "), True)")
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = (0 + (" + str(self._main_template.x_offset) + ") - " + str(self._main_template.release_pixel) + ",  0 + (" + str(self._main_template.y_offset) + "), True)")
+                    elif self._main_template.hold_and_release == 5:
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0 + (" + str(self._main_template.x_offset) + "), 0 + (" + str(self._main_template.y_offset) + "), True)")
+                        self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = (0 + (" + str(self._main_template.x_offset) + ") + " + str(self._main_template.release_pixel) + ",  0 + (" + str(self._main_template.y_offset) + "), True)")
+                else:
+                    self._code_lines.append("    "  + name + "_object.main_xy_coordinates = (0 + (" + str(self._main_template.x_offset) + "), 0 + (" + str(self._main_template.y_offset) + "), True)")
+                    self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = None")
+        else:
+            self._code_lines.append("    "  + name + "_object.main_xy_coordinates = None")
+            self._code_lines.append("    "  + name + "_object.main_xy_coordinates_release = None")
+        
+        
+        cnt = 1
+        for sub_template in self._sub_templates_finder:
+            if sub_template.height != 0 and sub_template.width !=0:
+            
+                sub_template.path = template_image_path + os.sep + os.sep + "sub_template_" + str(cnt) + ".png"
+
+                #roi_x = str(sub_template.roi_x - self._main_template.x)
+                roi_x = str(sub_template.roi_x)
+                roi_y = str(sub_template.roi_y)
+                
+                roi_width = str(sub_template.roi_width)
+                roi_height = str(sub_template.roi_height)
+                    
+                str1 = "    " + name + "_object.add_sub_component({\"path\": get_python_lib() + os.sep + \"" + sub_template.path + "\", \"threshold\":" + repr(sub_template.threshold) + "},"
+                str2 = "                                  {\"roi_x\": " + roi_x + ", \"roi_y\": " + roi_y + ", \"roi_width\": " + roi_width + ", \"roi_height\": " + roi_height + "})"
+    
+                self._code_lines.append(str1)
+                self._code_lines.append(str2)
+                self._code_lines_for_object_finder.append(str1)
+                self._code_lines_for_object_finder.append(str2)
+                
+                if sub_template.click == True or sub_template.rightclick == True or sub_template.mousemove == True or sub_template.hold_and_release is not None:
+                    if sub_template.x_offset is None and sub_template.y_offset is None: 
+                        if sub_template.hold_and_release is not None:
+                            if sub_template.hold_and_release == 0:
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0, 0, False))")
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append(None)")
+                            elif sub_template.hold_and_release == 1:
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0, 0, False))")
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append(None)")
+                            elif sub_template.hold_and_release == 2:
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0, 0, False))")
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append((0, 0 - " + str(sub_template.release_pixel) + ", False))")
+                            elif sub_template.hold_and_release == 3:
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0, 0))")
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append((0, 0 + " + str(sub_template.release_pixel) + ", False))")
+                            elif sub_template.hold_and_release == 4:
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0, 0))")
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append((0 - " + str(sub_template.release_pixel) + ", 0, False))")
+                            elif sub_template.hold_and_release == 5:
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0, 0))")
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append((0 + " + str(sub_template.release_pixel) + ", 0, False))")
+                        else:
+                            self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0, 0, False))")
+                            self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append(None)")
+                    else:
+                        if sub_template.hold_and_release is not None:
+                            if sub_template.hold_and_release == 0:
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0 + (" + str(sub_template.x_offset) + "), 0 + (" + str(sub_template.y_offset) + "), True))")
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append(None)")
+                            elif sub_template.hold_and_release == 1:
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0 + (" + str(sub_template.x_offset) + "), 0 + (" + str(sub_template.y_offset) + "), True))")
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append(None)")
+                            elif sub_template.hold_and_release == 2:
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0 + (" + str(sub_template.x_offset) + "), 0 + (" + str(sub_template.y_offset) + "), True))")
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append((0 + (" + str(sub_template.x_offset) + "), 0 + (" + str(sub_template.y_offset) + ") - " + str(sub_template.release_pixel) + ", True))")
+                            elif sub_template.hold_and_release == 3:
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0 + (" + str(sub_template.x_offset) + "), 0 + (" + str(sub_template.y_offset) + ")))")
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append((0 + (" + str(sub_template.x_offset) + "), 0 + (" + str(sub_template.y_offset) + ") + " + str(sub_template.release_pixel) + ", True))")
+                            elif sub_template.hold_and_release == 4:
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0 + (" + str(sub_template.x_offset) + "), 0 + (" + str(sub_template.y_offset) + ")))")
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append((0 + (" + str(sub_template.x_offset) + ") - " + str(sub_template.release_pixel) + ",  0 + (" + str(sub_template.y_offset) + "), True))")
+                            elif sub_template.hold_and_release == 5:
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0 + (" + str(sub_template.x_offset) + "), 0 + (" + str(sub_template.y_offset) + ")))")
+                                self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append((0 + (" + str(sub_template.x_offset) + ") + " + str(sub_template.release_pixel) + ",  0 + (" + str(sub_template.y_offset) + "), True))")
+                        else:
+                            self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append((0 + (" + str(sub_template.x_offset) + "), 0 + (" + str(sub_template.y_offset) + "), True))")
+                            self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append(None)")
+                else:
+                    self._code_lines.append("    "  + name + "_object.sub_xy_coordinates.append(None)")
+                    self._code_lines.append("    "  + name + "_object.sub_xy_coordinates_release.append(None)")
+    
+                #self._code_lines.append("\n")
+                cnt = cnt + 1
+        
+        self._code_lines.append("")
+        
+        string_function_args = "def " + name + "_mouse_keyboard("
+        
+        args_range = range(1, self.args_number + 1)
+        
+        for arg_num in args_range:
+            string_function_args = string_function_args + "arg" + str(arg_num) + ", " 
+        
+        if string_function_args.endswith(", "):
+            string_function_args = string_function_args[:-2]
+        string_function_args = string_function_args + "):"
+        self._code_lines.append(string_function_args)
+        
+        self._code_lines.append("    global " + name + "_object")
+        self._code_lines.append("    info_manager = InfoManager()")
+        self._code_lines.append("    sleep_factor = info_manager.get_info(\"ACTIONS DELAY\")")  
+        
         if self._main_template.click == True or self._main_template.rightclick == True or self._main_template.mousemove == True or self._main_template.hold_and_release  is not None:
             self.mouse_or_key_is_set = True
             self._code_lines.append("    main_template_pos = " + name + "_object.get_result(0)")  
@@ -1239,7 +1713,7 @@ class AlyvixImageFinderView(QWidget):
                                 
             
             if self._main_template.x_offset is None and self._main_template.y_offset is None: 
-                print "holdddddddddddd index", self._main_template.hold_and_release 
+                #print "holdddddddddddd index", self._main_template.hold_and_release 
                 if self._main_template.click == True:
                     self._code_lines.append("    m.click_2(main_template_pos.x + (main_template_pos.width/2), main_template_pos.y + (main_template_pos.height/2), 1, " + str(self._main_template.number_of_clicks) + ", " + str(self._main_template.click_delay) + ")")
                 elif self._main_template.rightclick == True:
@@ -1361,7 +1835,7 @@ class AlyvixImageFinderView(QWidget):
                             self._code_lines.append("    m.click(sub_template_" + str(cnt) + "_pos.x + (" + str(sub_template.x_offset) + "), sub_template_" + str(cnt) + "_pos.y + (" + str(sub_template.y_offset) + ")), 2)")
                         elif sub_template.mousemove == True:
                             self._code_lines.append("    m.move(sub_template_" + str(cnt) + "_pos.x + (" + str(sub_template.x_offset) + "), sub_template_" + str(cnt) + "_pos.y + (" + str(sub_template.y_offset) + "))")
-                        elif sub_rect.hold_and_release is not None:
+                        elif sub_template.hold_and_release is not None:
                             if sub_template.hold_and_release == 0:
                                 self._code_lines.append("    m.hold(sub_template_" + str(cnt) + "_pos.x + (" + str(sub_template.x_offset) + "), sub_template_" + str(cnt) + "_pos.y + (" + str(sub_template.y_offset) + "))")
                             elif sub_template.hold_and_release == 1:
@@ -1844,30 +2318,41 @@ class AlyvixImageFinderView(QWidget):
         if "True" in main_template_node.getElementsByTagName("click")[0].firstChild.nodeValue:
             self._main_template.click = True
             self.mouse_or_key_is_set = True
+            self._main_template.mouse_or_key_is_set = True
         else:
             self._main_template.click = False
             
-        self._main_template.number_of_clicks = int(main_template_node.getElementsByTagName("number_of_clicks")[0].firstChild.nodeValue)
-        self._main_template.click_delay = int(main_template_node.getElementsByTagName("click_delay")[0].firstChild.nodeValue)
+        try:
+            self._main_template.number_of_clicks = int(main_template_node.getElementsByTagName("number_of_clicks")[0].firstChild.nodeValue)
+        except:
+            pass
+            
+        try:
+            self._main_template.click_delay = int(main_template_node.getElementsByTagName("click_delay")[0].firstChild.nodeValue)
+        except:
+            pass
         
         try:
             if "True" in main_template_node.getElementsByTagName("doubleclick")[0].firstChild.nodeValue:
-                self._main_template.doubleclick = True
+                self._main_template.click = True
+                self._main_template.number_of_clicks = 2
+                self._main_template.click_delay = 10
                 self.mouse_or_key_is_set = True
-            else:
-                self._main_template.doubleclick = False
+                self._main_template.mouse_or_key_is_set = True
         except:
             pass
             
         if "True" in main_template_node.getElementsByTagName("rightclick")[0].firstChild.nodeValue:
             self._main_template.rightclick = True
             self.mouse_or_key_is_set = True
+            self._main_template.mouse_or_key_is_set = True
         else:
             self._main_template.rightclick = False
             
         if "True" in main_template_node.getElementsByTagName("mousemove")[0].firstChild.nodeValue:
             self._main_template.mousemove = True
             self.mouse_or_key_is_set = True
+            self._main_template.mouse_or_key_is_set = True
         else:
             self._main_template.mousemove = False
             
@@ -1892,6 +2377,9 @@ class AlyvixImageFinderView(QWidget):
                 self._main_template.hold_and_release = None
             else:
                 self._main_template.hold_and_release = int(main_template_node.getElementsByTagName("hold_and_release")[0].firstChild.nodeValue)
+                self._main_template.mouse_or_key_is_set = True
+                self.mouse_or_key_is_set = True
+                
         except:
             pass
             
@@ -1932,6 +2420,7 @@ class AlyvixImageFinderView(QWidget):
             self._main_template.sendkeys = self._main_template.sendkeys.encode('utf-8')
             if self._main_template.sendkeys != "":
                 self.mouse_or_key_is_set = True
+                self._main_template.mouse_or_key_is_set = True
         except AttributeError:
             self._main_template.sendkeys = ''.encode('utf-8')
         
@@ -1965,30 +2454,41 @@ class AlyvixImageFinderView(QWidget):
             if "True" in sub_template_node.getElementsByTagName("click")[0].firstChild.nodeValue:
                 sub_template_obj.click = True
                 self.mouse_or_key_is_set = True
+                sub_template_obj.mouse_or_key_is_set = True
             else:
                 sub_template_obj.click = False
                 
-            sub_template_obj.number_of_clicks = int(sub_template_node.getElementsByTagName("number_of_clicks")[0].firstChild.nodeValue)
-            sub_template_obj.click_delay = int(sub_template_node.getElementsByTagName("click_delay")[0].firstChild.nodeValue)
+            try:
+                sub_template_obj.number_of_clicks = int(sub_template_node.getElementsByTagName("number_of_clicks")[0].firstChild.nodeValue)
+            except:
+                pass
+                
+            try:
+                sub_template_obj.click_delay = int(sub_template_node.getElementsByTagName("click_delay")[0].firstChild.nodeValue)
+            except:
+                pass
                 
             try:
                 if "True" in sub_template_node.getElementsByTagName("doubleclick")[0].firstChild.nodeValue:
-                    sub_template_obj.doubleclick = True
+                    sub_template_obj.click = True
+                    sub_template_obj.number_of_clicks = 2
+                    sub_template_obj.click_delay = 10
                     self.mouse_or_key_is_set = True
-                else:
-                    sub_template_obj.doubleclick = False
+                    sub_template_obj.mouse_or_key_is_set = True
             except:
                 pass
             
             if "True" in sub_template_node.getElementsByTagName("rightclick")[0].firstChild.nodeValue:
                 sub_template_obj.rightclick = True
                 self.mouse_or_key_is_set = True
+                sub_template_obj.mouse_or_key_is_set = True
             else:
                 sub_template_obj.rightclick = False
                 
             if "True" in sub_template_node.getElementsByTagName("mousemove")[0].firstChild.nodeValue:
                 sub_template_obj.mousemove = True
                 self.mouse_or_key_is_set = True
+                sub_template_obj.mouse_or_key_is_set = True
             else:
                 sub_template_obj.mousemove = False
                 
@@ -2013,6 +2513,8 @@ class AlyvixImageFinderView(QWidget):
                     sub_template_obj.hold_and_release = None
                 else:
                     sub_template_obj.hold_and_release = int(sub_template_node.getElementsByTagName("hold_and_release")[0].firstChild.nodeValue)
+                    sub_template_obj.mouse_or_key_is_set = True
+                    self.mouse_or_key_is_set = True
             except:
                 pass
                 
@@ -2045,6 +2547,7 @@ class AlyvixImageFinderView(QWidget):
                 
                 if sub_template_obj.sendkeys != "":
                     self.mouse_or_key_is_set = True
+                    sub_template_obj.mouse_or_key_is_set = True
                 
             except AttributeError:
                 sub_template_obj.sendkeys = ''.encode('utf-8')
@@ -2162,14 +2665,14 @@ class MainTemplateForGui:
         self.find = False
         self.mouse_or_key_is_set = False
         self.args_number = 0
-        self.timeout = 60
+        self.timeout = 20
         self.timeout_exception = True
         self.sendkeys = ""
         self.sendkeys_quotes = True
         self.text_encrypted = False
         self.enable_performance = True
-        self.warning = 15.00
-        self.critical = 40.00
+        self.warning = 10.00
+        self.critical = 15.00
         
 class SubTemplateForGui:
     
@@ -2214,6 +2717,9 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
                         
         self.parent = parent
         self.added_block = False
+        self.scaling_factor = self.parent.parent.scaling_factor
+        
+        self.find_radio.hide()
         
         """
         self.number_bar = NumberBar(self.tab_code)
@@ -2224,7 +2730,7 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
         self.textEdit.setAcceptRichText(False)
         """
         
-        self.textEdit = LineTextWidget(self.tab_code)
+        self.textEdit = LineTextWidget() #LineTextWidget(self.tab_code)
         self.textEdit.setGeometry(QRect(8, 9, 540, 225))
         self.textEdit.setText(self.parent.build_code_string())
         #self.textEdit.setStyleSheet("font-family: Currier New;")
@@ -2246,7 +2752,31 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
         
         self.textEditCustomLines.setLineWrapMode(QTextEdit.NoWrap)
 
-        self.setFixedSize(self.size())
+        #self.setFixedSize(self.size())
+        self.setFixedSize(int(self.frameGeometry().width() * self.scaling_factor), int(self.frameGeometry().height() * self.scaling_factor))
+        
+        self.widget.setGeometry(QRect(int(self.widget.geometry().x() * self.scaling_factor), int(self.widget.geometry().y() * self.scaling_factor),
+                                int(self.widget.geometry().width() * self.scaling_factor), int(self.widget.geometry().height() * self.scaling_factor)))
+                                
+        self.gridLayoutWidget.setGeometry(QRect(int(self.gridLayoutWidget.geometry().x() * self.scaling_factor), int(self.gridLayoutWidget.geometry().y() * self.scaling_factor),
+                                          int(self.gridLayoutWidget.geometry().width() * self.scaling_factor), int(self.gridLayoutWidget.geometry().height() * self.scaling_factor)))
+                                          
+        self.pushButtonOk.setGeometry(QRect(int(self.pushButtonOk.geometry().x() * self.scaling_factor), int(self.pushButtonOk.geometry().y() * self.scaling_factor),
+                                          int(self.pushButtonOk.geometry().width() * self.scaling_factor), int(self.pushButtonOk.geometry().height() * self.scaling_factor)))
+                                          
+        self.pushButtonCancel.setGeometry(QRect(int(self.pushButtonCancel.geometry().x() * self.scaling_factor), int(self.pushButtonCancel.geometry().y() * self.scaling_factor),
+                                          int(self.pushButtonCancel.geometry().width() * self.scaling_factor), int(self.pushButtonCancel.geometry().height() * self.scaling_factor)))
+                                          
+        self.listWidget.setGeometry(QRect(int(self.listWidget.geometry().x() * self.scaling_factor), int(self.listWidget.geometry().y() * self.scaling_factor),
+                                          int(self.listWidget.geometry().width() * self.scaling_factor), int(self.listWidget.geometry().height() * self.scaling_factor)))
+                                
+        
+        self.widget_2.setGeometry(QRect(int(self.widget_2.geometry().x() * self.scaling_factor), int(self.widget_2.geometry().y() * self.scaling_factor),
+                                        int(self.widget_2.geometry().width() * self.scaling_factor), int(self.widget_2.geometry().height() * self.scaling_factor)))
+                                
+        self.gridLayoutWidget_2.setGeometry(QRect(int(self.gridLayoutWidget_2.geometry().x() * self.scaling_factor), int(self.gridLayoutWidget_2.geometry().y() * self.scaling_factor),
+                                          int(self.gridLayoutWidget_2.geometry().width() * self.scaling_factor), int(self.gridLayoutWidget_2.geometry().height() * self.scaling_factor)))
+
 
         #self.setWindowTitle('Application Object Properties')
         self.setWindowFlags(Qt.WindowCloseButtonHint | Qt.WindowStaysOnTopHint)
@@ -2288,9 +2818,13 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
             self.clickRadio.setChecked(True)
             self.pushButtonXYoffset.setEnabled(True)
             self.clicknumber_spinbox.setEnabled(True)
-            self.clickdelay_spinbox.setEnabled(True)
             self.labelClickNumber.setEnabled(True)
-            self.labelClickDelay.setEnabled(True)
+            if self.parent._main_template.number_of_clicks > 1:
+                self.labelClickDelay.setEnabled(True)
+                self.clickdelay_spinbox.setEnabled(True)
+            else:
+                self.labelClickDelay.setEnabled(False)
+                self.clickdelay_spinbox.setEnabled(False)
             
         else:
             self.clickRadio.setChecked(False)
@@ -2383,19 +2917,44 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
         self.inserttext.setText(self.parent._main_template.sendkeys)       
 
         if self.parent._main_template.sendkeys == "":
-            self.inserttext.setText("Insert here the Keystroke to send")
+            self.inserttext.setText("Type text strings and shortcuts")
         else:
             self.inserttext.setText(unicode(self.parent._main_template.sendkeys, 'utf-8'))       
 
         if self.parent.object_name == "":
-            self.namelineedit.setText("Type here the name of the object")
+            self.namelineedit.setText("Type the keyword name")
         else:
-            self.namelineedit.setText(self.parent.object_name)      
+            self.namelineedit.setText(self.parent.object_name)   
+
+        self.doubleSpinBoxWarning.setValue(self.parent.warning)
+        self.doubleSpinBoxCritical.setValue(self.parent.critical)
+            
+        if self.parent.enable_performance is True:
+            self.checkBoxEnablePerformance.setCheckState(Qt.Checked)
+            self.doubleSpinBoxWarning.setEnabled(True)
+            self.doubleSpinBoxCritical.setEnabled(True)
+            self.labelWarning.setEnabled(True)
+            self.labelCritical.setEnabled(True)
+        else:
+            self.checkBoxEnablePerformance.setCheckState(Qt.Unchecked)
+            self.doubleSpinBoxWarning.setEnabled(False)
+            self.doubleSpinBoxCritical.setEnabled(False)
+            self.labelWarning.setEnabled(False)
+            self.labelCritical.setEnabled(False)            
 
         
         self.spinBoxArgs.setValue(self.parent.args_number)
         
-        self.init_block_code()            
+        if self.parent._main_template.x_offset != None or self.parent._main_template.y_offset != None:
+            self.pushButtonXYoffset.setText("Reset\nPoint")
+        
+        self.init_block_code()
+                
+        self.pushButtonOk.setFocus() 
+
+        if self.namelineedit.text() == "Type the keyword name":
+            self.namelineedit.setFocus()           
+            self.namelineedit.setText("")          
         
         self.connect(self.doubleSpinBoxThreshold, SIGNAL('valueChanged(double)'), self.threshold_spinbox_event)
         
@@ -2441,7 +3000,7 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
         
         self.namelineedit.installEventFilter(self)
         
-        self.connect(self.tabWidget, SIGNAL('currentChanged(int)'), self.tab_changed_event)
+        #self.connect(self.tabWidget, SIGNAL('currentChanged(int)'), self.tab_changed_event)
         
         self.connect(self.checkBoxEnablePerformance, SIGNAL('stateChanged(int)'), self.enable_performance_event)
         self.connect(self.doubleSpinBoxWarning, SIGNAL('valueChanged(double)'), self.warning_event)
@@ -2569,7 +3128,7 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
                     
             cnt += 1
         
-        if str(self.namelineedit.text().toUtf8()) == "" or str(self.namelineedit.text().toUtf8()) == "Type here the name of the object":
+        if str(self.namelineedit.text().toUtf8()) == "" or str(self.namelineedit.text().toUtf8()) == "Type the keyword name":
             answer = QMessageBox.warning(self, "Warning", "The object name is empty. Do you want to create it automatically?", QMessageBox.Yes, QMessageBox.No)
         elif os.path.isfile(filename) and self.parent.action == "new":
             
@@ -2749,12 +3308,16 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
         if selected_index == 0:
             self.widget_2.hide()
             self.widget.show()
-            self.widget.setGeometry(QRect(172, 9, 381, 276))
+            #self.widget.setGeometry(QRect(168, 9, 413, 433))
+            self.widget.setGeometry(QRect(self.widget.geometry().x(), self.widget.geometry().y(),
+                                    self.widget.geometry().width(), self.widget.geometry().height()))
 
         else:
             self.widget.hide()
             self.widget_2.show()
-            self.widget_2.setGeometry(QRect(172, 9, 381, 271))
+            #self.widget_2.setGeometry(QRect(168, 9, 414, 434))
+            self.widget_2.setGeometry(QRect(self.widget.geometry().x(), self.widget.geometry().y(),
+                                        self.widget_2.geometry().width(), self.widget_2.geometry().height()))
             self.sub_template_index = selected_index - 1
             self.update_sub_template_view()
 
@@ -2827,10 +3390,11 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
         index = self.sub_template_index
         self.doubleSpinBoxThreshold_2.setValue(self.parent._sub_templates_finder[index].threshold)
         
-        
+        if self.parent._sub_templates_finder[index].x_offset != None or self.parent._sub_templates_finder[index].y_offset != None:
+            self.pushButtonXYoffset_2.setText("Reset\nPoint")
         
         if self.parent._sub_templates_finder[index].sendkeys == "":
-            self.inserttext_2.setText("Insert here the Keystroke to send")
+            self.inserttext_2.setText("Type text strings and shortcuts")
         else:
             self.inserttext_2.setText(unicode(self.parent._sub_templates_finder[index].sendkeys, 'utf-8'))
         
@@ -2854,9 +3418,13 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
             self.clickRadio_2.setChecked(True)
             self.pushButtonXYoffset_2.setEnabled(True)
             self.clicknumber_spinbox_2.setEnabled(True)
-            self.clickdelay_spinbox_2.setEnabled(True)
             self.labelClickNumber_2.setEnabled(True)
-            self.labelClickDelay_2.setEnabled(True)
+            if self.parent._sub_templates_finder[self.sub_template_index].number_of_clicks > 1:
+                self.labelClickDelay_2.setEnabled(True)
+                self.clickdelay_spinbox_2.setEnabled(True)
+            else:
+                self.labelClickDelay_2.setEnabled(False)
+                self.clickdelay_spinbox_2.setEnabled(False)
         else:
             self.clickRadio_2.setChecked(False)
             self.pushButtonXYoffset_2.setEnabled(False)
@@ -2898,10 +3466,12 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
             self.dontclickRadio_2.setChecked(False)
             
         if self.parent._sub_templates_finder[self.sub_template_index].hold_and_release is not None:
+            #self.disconnect(self.holdreleaseComboBox_2, SIGNAL("currentIndexChanged(int)"), self.holdreleaseComboBox_event_2)
+            #print ""
+            self.holdreleaseComboBox_2.setCurrentIndex(self.parent._sub_templates_finder[self.sub_template_index].hold_and_release)
             self.holdreleaseRadio_2.setChecked(True)
             self.holdreleaseComboBox_2.setEnabled(True)
             self.pushButtonXYoffset_2.setEnabled(True)
-            self.holdreleaseComboBox_2.setCurrentIndex(self.parent._sub_templates_finder[self.sub_template_index].hold_and_release)
             
             if self.parent._sub_templates_finder[self.sub_template_index].hold_and_release == 0 or self.parent._sub_templates_finder[self.sub_template_index].hold_and_release == 1:
                 self.holdreleaseSpinBox_2.setEnabled(False)
@@ -2909,6 +3479,8 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
             else: 
                 self.holdreleaseSpinBox_2.setEnabled(True)
                 self.holdreleaseSpinBox_2.setValue(self.parent._sub_templates_finder[self.sub_template_index].release_pixel)
+                
+            #self.connect(self.holdreleaseComboBox_2, SIGNAL("currentIndexChanged(int)"), self.holdreleaseComboBox_event_2)
                 
         else:
             self.holdreleaseRadio_2.setChecked(False)
@@ -2924,8 +3496,14 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
             self.pushButtonXYoffset.setEnabled(True) 
             self.labelClickNumber.setEnabled(True)
             self.clicknumber_spinbox.setEnabled(True)
-            self.labelClickDelay.setEnabled(True)
-            self.clickdelay_spinbox.setEnabled(True)
+
+            if self.clicknumber_spinbox.value() > 1:
+                self.labelClickDelay.setEnabled(True)
+                self.clickdelay_spinbox.setEnabled(True)
+            else:
+                self.labelClickDelay.setEnabled(False)
+                self.clickdelay_spinbox.setEnabled(False)
+                
             self.holdreleaseComboBox.setEnabled(False)
             self.holdreleaseSpinBox.setEnabled(False)
             
@@ -2988,8 +3566,14 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
         self.parent.update()
             
     def pushButtonXYoffset_event(self):
-        self.parent.set_xy_offset = -1  #-1 for main, other int for sub index
-        self.hide()
+        if str(self.pushButtonXYoffset.text()) != "Reset\nPoint":
+            self.parent.set_xy_offset = -1  #-1 for main, other int for sub index
+            self.hide()
+        else:
+            self.parent._main_template.x_offset = None
+            self.parent._main_template.y_offset = None
+            self.pushButtonXYoffset.setText("Interaction\nPoint")
+            self.parent.update()
     
     def holdreleaseRadio_event(self, event):  
         if event is False:
@@ -3013,7 +3597,7 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
             else: 
                 self.holdreleaseSpinBox.setEnabled(True)
             
-            print "combo indexxxxxxx", combo_index
+            #print "combo indexxxxxxx", combo_index
             self.parent._main_template.hold_and_release = combo_index
             
     def holdreleaseComboBox_event(self, event):
@@ -3033,11 +3617,19 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
         
     def clicknumber_spinbox_change_event (self, event):
         self.parent._main_template.number_of_clicks = self.clicknumber_spinbox.value()
+        
+        if self.clicknumber_spinbox.value() > 1 and self.parent._main_template.click is True:
+            self.labelClickDelay.setEnabled(True)
+            self.clickdelay_spinbox.setEnabled(True)
+        else:
+            self.labelClickDelay.setEnabled(False)
+            self.clickdelay_spinbox.setEnabled(False)
+        
         self.parent.build_code_array()
             
     @pyqtSlot(QString)
     def inserttext_event(self, text):
-        if self.inserttext.text() == "Insert here the Keystroke to send": #or self.inserttext.text() == "#k.send('Type here the key')":
+        if self.inserttext.text() == "Type text strings and shortcuts": #or self.inserttext.text() == "#k.send('Type here the key')":
             self.parent._main_template.sendkeys = "".encode('utf-8')
         else:
             self.parent._main_template.sendkeys = str(text.toUtf8()) #str(self.inserttext.text().toUtf8())
@@ -3056,7 +3648,7 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
         
     @pyqtSlot(QString)
     def namelineedit_event(self, text):
-        if text == "Type here the name of the object":
+        if text == "Type the keyword name":
             self.parent.object_name = "".encode('utf-8')
         else:
             self.parent.object_name = str(text.toUtf8()).replace(" ", "_")
@@ -3064,15 +3656,15 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
     def eventFilter(self, obj, event):
         if event.type() == event.MouseButtonPress:
         
-            if self.namelineedit.text() == "Type here the name of the object" and obj.objectName() == "namelineedit":
+            if self.namelineedit.text() == "Type the keyword name" and obj.objectName() == "namelineedit":
                 self.namelineedit.setText("")
                 return True
         
-            if self.inserttext.text() == "Insert here the Keystroke to send" and obj.objectName() == "inserttext":
+            if self.inserttext.text() == "Type text strings and shortcuts" and obj.objectName() == "inserttext":
                 self.inserttext.setText("")
                 return True
                     
-            if self.inserttext_2.text() == "Insert here the Keystroke to send" and obj.objectName() == "inserttext_2":
+            if self.inserttext_2.text() == "Type text strings and shortcuts" and obj.objectName() == "inserttext_2":
                 self.inserttext_2.setText("")
                 return True
                 
@@ -3135,18 +3727,18 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
                     self.parent.update()
                     return True
             elif self.namelineedit.text() == "" and obj.objectName() == "namelineedit":
-                self.namelineedit.setText("Type here the name of the object")
+                self.namelineedit.setText("Type the keyword name")
                 return True
             elif obj.objectName() == "namelineedit":
                 self.namelineedit.setText(self.parent.object_name)
                 return True
         
             if self.inserttext.text() == "" and obj.objectName() == "inserttext":
-                self.inserttext.setText("Insert here the Keystroke to send")
+                self.inserttext.setText("Type text strings and shortcuts")
                 return True
                 
             if self.inserttext_2.text() == "" and obj.objectName() == "inserttext_2":
-                self.inserttext_2.setText("Insert here the Keystroke to send")
+                self.inserttext_2.setText("Type text strings and shortcuts")
                 return True
                 
             if obj.objectName() == "textEditCustomLines" and self.added_block is False:
@@ -3156,6 +3748,8 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
                 self.added_block = False
                 return True
                 
+        if event.type() == event.KeyPress and obj.objectName() == "namelineedit" and (event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter):
+            self.pushButtonOk_event()
         if event.type() == event.KeyPress and obj.objectName() == "textEditCustomLines" and event.key() == Qt.Key_Tab:
             #event.ignore()
             #self.textEditCustomLines.append("    ")
@@ -3401,7 +3995,7 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
 
     @pyqtSlot(QString)
     def inserttext_event_2(self, text):
-        if self.inserttext_2.text() == "Insert here the Keystroke to send":
+        if self.inserttext_2.text() == "Type text strings and shortcuts":
             self.parent._sub_templates_finder[self.sub_template_index].sendkeys = "".encode('utf-8')
         else:
             self.parent._sub_templates_finder[self.sub_template_index].sendkeys = str(text.toUtf8())
@@ -3501,6 +4095,10 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
             self.min_width_spinbox_2.setEnabled(False)
             self.max_width_spinbox_2.setEnabled(False)
             
+            if self.show_min_max_2.isChecked() is True:
+                self.show_min_max_2.setChecked(False)
+                self.show_tolerance_2.setChecked(True)
+            
             self.parent._sub_templates_finder[self.sub_template_index].use_min_max = False
             self.parent._sub_templates_finder[self.sub_template_index].use_tolerance = True
             
@@ -3520,6 +4118,10 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
             self.min_width_spinbox_2.setEnabled(True)
             self.max_width_spinbox_2.setEnabled(True)
             
+            if self.show_tolerance_2.isChecked() is True:
+                self.show_tolerance_2.setChecked(False)
+                self.show_min_max_2.setChecked(True)
+            
             self.parent._sub_templates_finder[self.sub_template_index].use_min_max = True
             self.parent._sub_templates_finder[self.sub_template_index].use_tolerance = False
             
@@ -3531,8 +4133,12 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
             self.pushButtonXYoffset_2.setEnabled(True)
             self.labelClickNumber_2.setEnabled(True)
             self.clicknumber_spinbox_2.setEnabled(True)
-            self.labelClickDelay_2.setEnabled(True)
-            self.clickdelay_spinbox_2.setEnabled(True)
+            if self.clicknumber_spinbox_2.value() > 1: # and self.parent._sub_templates_finder[self.sub_template_index].click is True:
+                self.labelClickDelay_2.setEnabled(True)
+                self.clickdelay_spinbox_2.setEnabled(True)
+            else:
+                self.labelClickDelay_2.setEnabled(False)
+                self.clickdelay_spinbox_2.setEnabled(False)
             self.holdreleaseComboBox_2.setEnabled(False)
             self.holdreleaseSpinBox_2.setEnabled(False)
         
@@ -3592,8 +4198,14 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
         self.parent.update()
             
     def pushButtonXYoffset_event_2(self):
-        self.parent.set_xy_offset = self.sub_template_index  #-1 for main, other int for sub index
-        self.hide()
+        if str(self.pushButtonXYoffset_2.text()) != "Reset\nPoint":
+            self.parent.set_xy_offset = self.sub_template_index  #-1 for main, other int for sub index
+            self.hide()
+        else:
+            self.parent._sub_templates_finder[self.sub_template_index].x_offset = None
+            self.parent._sub_templates_finder[self.sub_template_index].y_offset = None
+            self.pushButtonXYoffset_2.setText("Interaction\nPoint")
+            self.parent.update()
         
     def holdreleaseRadio_event_2(self, event):  
         if event is False:
@@ -3636,7 +4248,20 @@ class AlyvixImageFinderPropertiesView(QDialog, Ui_Form):
         
     def clicknumber_spinbox_change_event_2 (self, event):
         self.parent._sub_templates_finder[self.sub_template_index].number_of_clicks = self.clicknumber_spinbox_2.value()
+        
+        if self.clicknumber_spinbox_2.value() > 1 and self.parent._sub_templates_finder[self.sub_template_index].click is True:
+            self.labelClickDelay_2.setEnabled(True)
+            self.clickdelay_spinbox_2.setEnabled(True)
+        else:
+            self.labelClickDelay_2.setEnabled(False)
+            self.clickdelay_spinbox_2.setEnabled(False)
+        
         self.parent.build_code_array()
+        
+    def closeEvent(self, event):
+            
+        self.parent.parent.show()
+        self.parent.close()
             
 
 class LineTextWidget(QFrame):

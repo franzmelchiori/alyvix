@@ -33,6 +33,7 @@ from alyvix.tools.configreader import ConfigReader
 from alyvix.finders.cachemanager import CacheManager
 from alyvix.bridge.robot import RobotManager
 from alyvix.tools.info import InfoManager
+from alyvix.tools.perfdata import PerfManager
 from .checkpresence import CheckPresence
 
 
@@ -89,6 +90,9 @@ class BaseFinder(object):
         :type name: string
         :param name: the object name
         """
+
+        keyword_timestamp_value = int(time.time() * 1000)
+
         self._main_component = None
         self._sub_components = []
 
@@ -97,6 +101,11 @@ class BaseFinder(object):
 
         self._main_extra_img_log = None
         self._sub_extra_imgages_log = []
+
+        self.main_xy_coordinates = None
+        self.main_xy_coordinates_release = None
+        self.sub_xy_coordinates = []
+        self.sub_xy_coordinates_release = []
 
         self._rect_extra_timedout_image = None
 
@@ -139,9 +148,17 @@ class BaseFinder(object):
         self._name_with_caller = None
 
         self._name = name
+
+        self._perf_manager = PerfManager()
+
         self._log_manager = LogManager()
         self._log_manager.set_object_name(self._name)
         self._screen_capture = ScreenManager()
+        if self._info_manager.get_info("CHECK BG") == True:
+            if self._screen_capture.is_resolution_ok() is False:
+                raise Exception(
+                    "Alyvix Background Service is installed but the screen resolution doesn't match with the config file")
+
         self._cacheManager = CacheManager()
         self._configReader = ConfigReader()
 
@@ -156,6 +173,23 @@ class BaseFinder(object):
 
         self._is_object_finder = False
         self._objects_found_of_sub_object_finder = []
+
+        current_keyword_timestamp_array = self._info_manager.get_info('KEYWORD TIMESTAMP')
+
+        #current_keyword_timestamp_array_copy = copy.deepcopy(current_keyword_timestamp_array)
+
+        timestamp_modified = False
+        for cnt_kts in xrange(len(current_keyword_timestamp_array)):
+            if current_keyword_timestamp_array[cnt_kts][0] == self._name:
+                timestamp_modified = True
+                current_keyword_timestamp_array[cnt_kts] = (self._name, keyword_timestamp_value)
+                break
+
+        if timestamp_modified is False:
+            current_keyword_timestamp_array.append((self._name, keyword_timestamp_value))
+
+        self._info_manager.set_info('KEYWORD TIMESTAMP',
+                                    current_keyword_timestamp_array)
 
     def _compress_image(self, img):
         return cv2.imencode('.png', img)[1]
@@ -261,6 +295,23 @@ class BaseFinder(object):
             timeout_value = self._configReader.get_finder_wait_timeout()
         else:
             timeout_value = timeout
+            #self._perf_manager.set_last_timeout_value(self._name, timeout_value)
+            current_keyword_timeout_array = self._info_manager.get_info('KEYWORD TIMEOUT')
+
+            # current_keyword_timestamp_array_copy = copy.deepcopy(current_keyword_timestamp_array)
+
+            timeout_modified = False
+            for cnt_kts in xrange(len(current_keyword_timeout_array)):
+                if current_keyword_timeout_array[cnt_kts][0] == self._name:
+                    timeout_modified = True
+                    current_keyword_timeout_array[cnt_kts] = (self._name, timeout_value)
+                    break
+
+            if timeout_modified is False:
+                current_keyword_timeout_array.append((self._name, timeout_value))
+
+            self._info_manager.set_info('KEYWORD TIMEOUT',
+                                        current_keyword_timeout_array)
 
         self._objects_found = []
 
@@ -314,7 +365,15 @@ class BaseFinder(object):
                     #time.sleep(3600)
 
                     if wait_disappear is False:
-                        self._log_manager.save_objects_found(self._name, self.get_source_image_gray(), self._objects_found, [x[1] for x in self._sub_components])
+                        from alyvix.finders.cv.objectfinder import ObjectFinder
+
+                        if isinstance(self, ObjectFinder):
+                            self._log_manager.save_objects_found(self._name, self.get_source_image_gray(), self._objects_found, [x[1] for x in self._sub_components], self.main_xy_coordinates, self.sub_xy_coordinates, finder_type=3)
+                        else:
+                            self._log_manager.save_objects_found(self._name, self.get_source_image_gray(),
+                                                                 self._objects_found,
+                                                                 [x[1] for x in self._sub_components],
+                                                                 self.main_xy_coordinates, self.sub_xy_coordinates, finder_type=None)
 
                     if wait_disappear is True:
                         self._heartbeat_images_copy = copy.deepcopy(self._heartbeat_images)
@@ -348,6 +407,7 @@ class BaseFinder(object):
                         for t_sub in self._sub_components:
                             self._log_manager.save_timedout_objects(self._name + "_timedout", self._last_thread_image, t_sub[0]._timedout_main_components, t_sub[0]._timedout_sub_components, t_sub[0]._main_extra_img_log, t_sub[0]._sub_extra_imgages_log, True, t_sub[0]._name)
 
+                    self._heartbeat_images_copy = copy.deepcopy(self._heartbeat_images)
                     return -1
 
                 t0 = time.time()
@@ -463,6 +523,24 @@ class BaseFinder(object):
         else:
             timeout_value = timeout
 
+            #self._perf_manager.set_last_timeout_value(self._name, timeout_value)
+            current_keyword_timeout_array = self._info_manager.get_info('KEYWORD TIMEOUT')
+
+            # current_keyword_timestamp_array_copy = copy.deepcopy(current_keyword_timestamp_array)
+
+            timeout_modified = False
+            for cnt_kts in xrange(len(current_keyword_timeout_array)):
+                if current_keyword_timeout_array[cnt_kts][0] == self._name:
+                    timeout_modified = True
+                    current_keyword_timeout_array[cnt_kts] = (self._name, timeout_value)
+                    break
+
+            if timeout_modified is False:
+                current_keyword_timeout_array.append((self._name, timeout_value))
+
+            self._info_manager.set_info('KEYWORD TIMEOUT',
+                                        current_keyword_timeout_array)
+
         timeout_value = timeout_value - wait_time
 
         self._objects_found = []
@@ -534,6 +612,22 @@ class BaseFinder(object):
                     if self._object_is_found_flag is True:
                         perf_wait = 0.0
                     else:
+                        """
+                        from alyvix.finders.cv.objectfinder import ObjectFinder
+
+                        if isinstance(self, ObjectFinder):
+                            self._log_manager.save_objects_found(self._name, self.get_source_image_gray(),
+                                                                 self._objects_found,
+                                                                 [x[1] for x in self._sub_components],
+                                                                 self.main_xy_coordinates, self.sub_xy_coordinates,
+                                                                 finder_type=3)
+                        else:
+                            self._log_manager.save_objects_found(self._name, self.get_source_image_gray(),
+                                                                 self._objects_found,
+                                                                 [x[1] for x in self._sub_components],
+                                                                 self.main_xy_coordinates, self.sub_xy_coordinates,
+                                                                 finder_type=None)
+                        """
                         self._log_manager.save_objects_found(self._name, self._last_thread_image_copy, self._objects_found, [x[1] for x in self._sub_components])
 
                         perf_wait = self._get_performance()

@@ -35,6 +35,7 @@ from alyvix.tools.info import InfoManager
 class _Template():
 
     def __init__(self, template_dict):
+        self._info_manager = InfoManager()
         self.image_data = None
         self.threshold = 0.7
         self._set_template_dictionary(template_dict)
@@ -48,7 +49,20 @@ class _Template():
         """
 
         if "path" in template_dict and "threshold" in template_dict:
-            self.image_data = cv2.imread(template_dict['path'], 0)
+            self.image_data = cv2.imread(template_dict['path'])
+
+            if str(self._info_manager.get_info('channel')).lower() != 'all':
+                img_b, img_g, img_r = cv2.split(self.image_data)
+
+                if str(self._info_manager.get_info('channel')).lower() == 'b':
+                    self.image_data = cv2.cvtColor(img_b, cv2.COLOR_GRAY2BGR)
+                elif str(self._info_manager.get_info('channel')).lower() == 'g':
+                    self.image_data = cv2.cvtColor(img_g, cv2.COLOR_GRAY2BGR)
+                elif str(self._info_manager.get_info('channel')).lower() == 'r':
+                    self.image_data = cv2.cvtColor(img_r, cv2.COLOR_GRAY2BGR)
+
+            self.image_data = cv2.cvtColor(self.image_data, cv2.COLOR_BGR2GRAY)
+
             self.threshold = template_dict['threshold']
         else:
             raise Exception("Template dictionary has an incorrect format!")
@@ -169,6 +183,18 @@ class ImageFinder(BaseFinder):
                 src_img_gray = cv2.cvtColor(src_img_color, cv2.COLOR_BGR2GRAY)
                 self.set_source_image_gray(src_img_gray)
                 source_img_auto_set = True
+
+            if str(self._info_manager.get_info('channel')).lower() != 'all':
+                img_b, img_g, img_r = cv2.split(self._source_image_color)
+
+                if str(self._info_manager.get_info('channel')).lower() == 'b':
+                    self._source_image_color = cv2.cvtColor(img_b, cv2.COLOR_GRAY2BGR)
+                elif str(self._info_manager.get_info('channel')).lower() == 'g':
+                    self._source_image_color = cv2.cvtColor(img_g, cv2.COLOR_GRAY2BGR)
+                elif str(self._info_manager.get_info('channel')).lower() == 'r':
+                    self._source_image_color = cv2.cvtColor(img_r, cv2.COLOR_GRAY2BGR)
+
+                self._source_image_gray = cv2.cvtColor(self._source_image_color , cv2.COLOR_BGR2GRAY)
 
             self.__find_log_folder = datetime.datetime.now().strftime("%H_%M_%S") + "_" + "searching"
 
@@ -367,6 +393,16 @@ class ImageFinder(BaseFinder):
                 self._objects_found = copy.deepcopy(objects_found)
                 if self._is_object_finder is True:
                     self._objects_found_of_sub_object_finder.extend(copy.deepcopy(objects_found))
+                    #if wait_disappear is False:
+
+                    #if self._info_manager.get_info('LOG OBJ IS FOUND') is False:
+                    if self._info_manager.get_info('LOG OBJ FINDER TYPE') is None:
+                        self._info_manager.set_info('LOG OBJ FINDER TYPE', 0)
+
+                    self._log_manager.save_objects_found(self._name, self.get_source_image_gray(),
+                                                         self._objects_found, [x[1] for x in self._sub_components],
+                                                         self.main_xy_coordinates, self.sub_xy_coordinates, finder_type=0)
+
                 self._cacheManager.SetLastObjFoundFullImg(self._source_image_gray)
 
             if source_img_auto_set is True:

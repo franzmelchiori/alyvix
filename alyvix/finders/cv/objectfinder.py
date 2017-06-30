@@ -27,6 +27,7 @@ import datetime
 #from alyvix.finders.basefinder import Roi
 from alyvix.finders.cv.basefinder import *
 from alyvix.tools.screen import ScreenManager
+from distutils.sysconfig import get_python_lib
 
 
 class ObjectFinder(BaseFinder):
@@ -45,9 +46,12 @@ class ObjectFinder(BaseFinder):
 
         #self._main_component = None
         #self._sub_components = []
+        self._sub_components_scraper = []
 
         self._main_indexes_to_keep = []
         self._sub_indexes_to_keep = []
+
+        self._scraped_text = ""
 
         the_name = "object_finder"
 
@@ -67,8 +71,12 @@ class ObjectFinder(BaseFinder):
         :param main_template: image of the template
         """
 
+        main_object._is_object_finder = True
+
         self._main_component = (main_object, roi_dict)
         self.add_name_to_component(main_object, self._name)
+
+        #self._is_object_finder = True
 
     def add_sub_object(self, sub_object, roi_dict):
 
@@ -77,6 +85,27 @@ class ObjectFinder(BaseFinder):
         sub_object._is_object_finder = True
 
         self._sub_components.append((sub_object, roi))
+
+        suite_source = self._info_manager.get_info('SUITE SOURCE')
+        suite_source = suite_source.split("\\")[-1]
+        suite_source = suite_source.split(".")[0]
+
+        if suite_source != None:
+            extra_path = get_python_lib() + os.sep + "alyvix" + os.sep + "robotproxy" + os.sep + \
+                         "Alyvix" + suite_source + "Objects_extra"
+            scraper_path = extra_path + os.sep + sub_object.get_name()
+            scraper_file = scraper_path + os.sep + "scraper.txt"
+
+        else:
+            scraper_path = sub_object.get_name()
+            scraper_file = scraper_path + os.sep + "scraper.txt"
+
+        if os.path.exists(scraper_file):
+
+            self._sub_components_scraper.append(True)
+        else:
+            self._sub_components_scraper.append(False)
+
         self.add_name_to_component(sub_object, self._name)
 
     def add_name_to_component(self, component, name):
@@ -115,7 +144,13 @@ class ObjectFinder(BaseFinder):
 
                 component.set_name_with_caller()
 
+    def get_scraped_text(self):
+        return self._scraped_text
+
     def find(self):
+
+        self._info_manager.set_info('last log image order', 0)
+        self._info_manager.set_info('LOG OBJ FINDER COLOR COUNTER', 0)
 
         time_before_find = time.time()
 
@@ -173,8 +208,15 @@ class ObjectFinder(BaseFinder):
 
         main_object.find()
 
+        #self._info_manager.set_info(1)
+
         cnt = 0
         for object in main_object._objects_found:
+
+            self._info_manager.set_info('LOG OBJ FINDER COLOR COUNTER', 1)
+
+            #self._info_manager.set_info('LOG OBJ FINDER COLOR COUNTER', 0)
+
 
             """
             if self._flag_thread_have_to_exit is True:
@@ -213,6 +255,8 @@ class ObjectFinder(BaseFinder):
 
                 sub_objects_found = []
                 timed_out_objects = []
+                cnt_sub_obj = 0
+
                 for sub_object in self._sub_components:
 
                     """
@@ -226,7 +270,18 @@ class ObjectFinder(BaseFinder):
 
                     #sub_object._objects_found = []
 
-                    sub_template_coordinates = copy.deepcopy(self.find_sub_object((x, y), sub_object))
+                    if self._sub_components_scraper[cnt_sub_obj] == True:
+                        (self._scraped_text,sub_template_coordinates) = self.find_sub_object((x, y), sub_object, scraper=True)
+
+                    else:
+                        sub_template_coordinates = copy.deepcopy(self.find_sub_object((x, y), sub_object))
+
+                    self._info_manager.set_info('LOG OBJ FINDER COLOR COUNTER',
+                                                self._info_manager.get_info('LOG OBJ FINDER COLOR COUNTER') + 1)
+
+                    if self._info_manager.get_info('LOG OBJ FINDER COLOR COUNTER') >= \
+                            len(self._info_manager.get_info('LOG OBJ FINDER FILL COLOR')):
+                        self._info_manager.set_info('LOG OBJ FINDER COLOR COUNTER', 0)
 
                     if sub_template_coordinates is not None:
                         sub_objects_found.append(sub_template_coordinates)
@@ -246,11 +301,14 @@ class ObjectFinder(BaseFinder):
                         objects_found.append(object_found)
                         self._main_indexes_to_keep.append(cnt)
 
+                    cnt_sub_obj += 1
+
                 self._timedout_sub_components.append(timed_out_objects)
             #self._log_manager.save_object_image("img_" + str(cnt) + ".png")
             cnt = cnt + 1
 
         if len(objects_found) > 0:
+            self._info_manager.set_info('LOG OBJ IS FOUND', True)
             self._objects_found = copy.deepcopy(objects_found)
             main_object.rebuild_result(self._main_indexes_to_keep)
             self.rebuild_result_for_sub_component(self._main_indexes_to_keep)
@@ -280,7 +338,7 @@ class ObjectFinder(BaseFinder):
 
         return self._objects_found
 
-    def find_sub_object(self, main_object_xy=None, sub_object=None):
+    def find_sub_object(self, main_object_xy=None, sub_object=None, scraper=False):
 
         roi = copy.deepcopy(sub_object[1]) #roi = Roi(sub_object[1])
 
@@ -319,6 +377,10 @@ class ObjectFinder(BaseFinder):
 
         object.set_source_image_color(self._source_image_color)
         object.set_source_image_gray(self._source_image_gray)
+
+        if scraper is True:
+
+            return (object.scraper(), MatchResult((roi.x, roi.y, roi.width, roi.height)))
 
         object_old_results = copy.deepcopy(object._objects_found)
         object.find()

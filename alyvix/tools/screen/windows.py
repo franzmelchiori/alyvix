@@ -18,6 +18,7 @@
 # Supporter: Wuerth Phoenix - http://www.wuerth-phoenix.com/
 # Official website: http://www.alyvix.com/
 
+import os
 import numpy
 import win32gui
 import win32ui
@@ -27,22 +28,18 @@ import ctypes
 from PIL import Image
 import cv2
 import cv2.cv as cv
+import win32con
+import win32service
 from .base import ScreenManagerBase
+
+exception_file = False
+exception_file_name = None
 
 
 class ScreenManager(ScreenManagerBase):
 
     def __init__(self):
         super(ScreenManager, self).__init__()
-
-        """
-        user32 = ctypes.windll.user32
-        try:
-            if not user32.IsProcessDPIAware():
-                user32.SetProcessDPIAware() #disable windows high dpi scaling
-        except:
-            pass
-        """
 
     def get_scaling_factor(self):
         """
@@ -85,6 +82,9 @@ class ScreenManager(ScreenManagerBase):
         :return: the screenshot image
         """
 
+        global exception_file
+        global exception_file_name
+
         ret_image = None
 
         #we use pywin32 api instead of PIL ImageGrab.
@@ -105,7 +105,54 @@ class ScreenManager(ScreenManagerBase):
         dataBitMap = win32ui.CreateBitmap()
         dataBitMap.CreateCompatibleBitmap(dcObj, w, h)
         cDC.SelectObject(dataBitMap)
-        cDC.BitBlt((0,0),(w, h) , dcObj, (0,0), win32con.SRCCOPY)
+        try:
+            cDC.BitBlt((0,0),(w, h) , dcObj, (0,0), win32con.SRCCOPY)
+
+            #if screen is now ok and an error message was sent (but not yet processed) then delete the error message
+            if exception_file is True:
+                try:
+                    os.remove(exception_file_name)
+                except:
+                    pass
+
+                exception_file = False
+                exception_file_name = None
+
+        except:
+            # if BitBlt fails, maybe the monitor is unavailable
+            try:
+                #if alyvix background service is intalled, we have to notify the service
+                scm = win32service.OpenSCManager('localhost', None, win32service.SC_MANAGER_CONNECT)
+
+                #if below method raises an exception then Alyvix Background Service is not installed
+                win32service.OpenService(scm, 'Alyvix Background Service', win32service.SERVICE_QUERY_CONFIG)
+
+                #if we are here then Alyvix Background Service is installed
+                #save the exception file
+                system_drive = os.environ['systemdrive']
+
+                alyvix_bg_service_path = system_drive + os.sep + "ProgramData\\Alyvix\\exception\\screen"
+
+                if not os.path.exists(alyvix_bg_service_path):
+                    os.makedirs(alyvix_bg_service_path)
+
+                filename = os.environ['username'] + ".txt"
+
+                full_name = alyvix_bg_service_path + os.sep + filename
+
+                if os.path.exists(full_name) is False:
+                    text_file = open(full_name, "w")
+                    text_file.write("BitBlt Error")
+                    text_file.close()
+
+                exception_file = True
+                exception_file_name = full_name
+
+            except:
+                pass
+
+            raise Exception("BitBlt failed")
+
         bmpinfo = dataBitMap.GetInfo()
         bmpstr = dataBitMap.GetBitmapBits(True)
 
@@ -127,3 +174,58 @@ class ScreenManager(ScreenManagerBase):
             return self._get_cv_gray_mat(mat)
         else:
             return ret_image
+
+    def is_resolution_ok(self):
+
+        try:
+            height = None
+            width = None
+            scm = win32service.OpenSCManager('localhost', None, win32service.SC_MANAGER_CONNECT)
+            s = win32service.OpenService(scm, 'Alyvix Background Service', win32service.SERVICE_QUERY_CONFIG)
+            cfg = win32service.QueryServiceConfig(s)
+            config_file = os.path.dirname(str(cfg[3]).replace("\"","")) + os.sep + "AlyvixBackgroundService.exe.config"
+
+            lines = []
+            with open(str(config_file)) as f:
+                lines = f.readlines()
+
+            for line in lines:
+                if "height" in line:
+                    height = line.replace("<add key=\"height\" value=\"","")
+                    height = height.replace("\"/>", "")
+                    height = height.replace(" ","")
+                    height = height.replace("\t","")
+                    height = int(height)
+
+                if "width" in line:
+                    width = line.replace("<add key=\"width\" value=\"", "")
+                    width = width.replace("\"/>", "")
+                    width = width.replace(" ", "")
+                    width = width.replace("\t", "")
+                    width = int(width)
+
+            if height is not None and width is not None:
+                hwnd = win32gui.GetDesktopWindow()
+                wDC = win32gui.GetWindowDC(hwnd)
+                dcObj = win32ui.CreateDCFromHandle(wDC)
+
+                HORZRES = 8
+                VERTRES = 10
+
+                DESKTOPHORZRES = 118
+                DESKTOPVERTRES = 117
+
+                v_HORZRES = dcObj.GetDeviceCaps(HORZRES)
+                v_VERTRES = dcObj.GetDeviceCaps(VERTRES)
+
+                v_DESKTOPHORZRES = dcObj.GetDeviceCaps(DESKTOPHORZRES)
+                v_DESKTOPVERTRES = dcObj.GetDeviceCaps(DESKTOPVERTRES)
+
+                dcObj.DeleteDC()
+
+                if height != v_DESKTOPVERTRES or width != v_DESKTOPHORZRES:
+                    return False
+        except:
+            pass
+
+        return True

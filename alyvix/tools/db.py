@@ -28,6 +28,7 @@ import ConfigParser
 from alyvix.tools.info import InfoManager
 from alyvix.tools.perfdata import PerfManager
 from distutils.sysconfig import get_python_lib
+from .natsmanager import NatsManager
 
 _db_file_name = None
 
@@ -46,7 +47,7 @@ class DbManager():
 
             self._db_home = os.path.dirname(os.path.abspath(self._info_manager.get_info("SUITE SOURCE")))
 
-            self._db_name = self._info_manager.get_info("SUITE NAME")
+            self._db_name = self._info_manager.get_info("SUITE NAME").lower().replace(" ","_")
 
             """
             if self._info_manager.get_info("TEST CASE NAME") is not None:
@@ -54,6 +55,8 @@ class DbManager():
             """
 
         self._db_name = self._db_name + ".db"
+
+        #self._info_manager.set_info("DB FILE", self._db_home + os.sep + self._db_name)
 
         self._connection = None
         self._cursor = None
@@ -72,26 +75,36 @@ class DbManager():
         self._create_runs_table()
         self._create_thresholds_table()
         self._create_sorting_table()
+        self._create_timestamp_table()
+
 
     def _create_runs_table(self):
-        query = "CREATE TABLE runs (start_time integer primary key"
+        query = "CREATE TABLE IF NOT EXISTS runs (start_time integer primary key"
         for perf in self._perf_manager.get_all_perfdata():
             query = query + ", " + perf.name + " integer"
         query += ")"
         self._cursor.execute(query)
 
     def _create_thresholds_table(self):
-        query = "CREATE TABLE thresholds (start_time integer primary key"
+        query = "CREATE TABLE IF NOT EXISTS thresholds (start_time integer primary key"
         for perf in self._perf_manager.get_all_perfdata():
-            query = query + ", " + perf.name + "_warn integer, " + perf.name + "_crit integer"
-        query += ")"
+            query = query + ", " + perf.name + "_warn integer, " + perf.name + "_crit integer, " \
+                    + perf.name + "_tout integer"
+        query += ", FOREIGN KEY (start_time) REFERENCES runs(start_time) ON DELETE CASCADE)"
         self._cursor.execute(query)
 
     def _create_sorting_table(self):
-        query = "CREATE TABLE sorting (start_time integer primary key"
+        query = "CREATE TABLE IF NOT EXISTS sorting (start_time integer primary key"
         for perf in self._perf_manager.get_all_perfdata():
             query = query + ", " + perf.name + "_index integer"
-        query += ")"
+        query += ", FOREIGN KEY (start_time) REFERENCES runs(start_time) ON DELETE CASCADE)"
+        self._cursor.execute(query)
+
+    def _create_timestamp_table(self):
+        query = "CREATE TABLE IF NOT EXISTS timestamp (start_time integer primary key"
+        for perf in self._perf_manager.get_all_perfdata():
+            query = query + ", " + perf.name + "_time integer"
+        query += ", FOREIGN KEY (start_time) REFERENCES runs(start_time) ON DELETE CASCADE)"
         self._cursor.execute(query)
 
     def _check_runs_columns(self):
@@ -122,6 +135,7 @@ class DbManager():
 
             perf_warn_present = False
             perf_crit_present = False
+            perf_timeout_present = False
 
             for row in rows:
 
@@ -130,6 +144,9 @@ class DbManager():
 
                 if row[1] == perf.name + "_crit":
                     perf_crit_present = True
+
+                if row[1] == perf.name + "_tout":
+                    perf_timeout_present = True
 
             #check and add new columns
             if perf_warn_present is False:
@@ -141,6 +158,12 @@ class DbManager():
             if perf_crit_present is False:
 
                 query = "ALTER TABLE thresholds ADD COLUMN " + perf.name + "_crit integer;"
+                self._cursor.execute(query)
+
+            #check and add new columns
+            if perf_timeout_present is False:
+
+                query = "ALTER TABLE thresholds ADD COLUMN " + perf.name + "_tout integer;"
                 self._cursor.execute(query)
 
     def _check_sorting_columns(self):
@@ -163,6 +186,25 @@ class DbManager():
                 query = "ALTER TABLE sorting ADD COLUMN " + perf.name + "_index integer;"
                 self._cursor.execute(query)
 
+    def _check_timestamp_columns(self):
+        query = "PRAGMA table_info(timestamp);"
+        rows = self._cursor.execute(query).fetchall()
+
+        for perf in self._perf_manager.get_all_perfdata():
+
+            perf_name_present = False
+
+            for row in rows:
+
+                if row[1] == perf.name + "_time":
+                    perf_name_present = True
+                    break
+
+            #check and add new columns
+            if perf_name_present is False:
+
+                query = "ALTER TABLE timestamp ADD COLUMN " + perf.name + "_time integer;"
+                self._cursor.execute(query)
 
     def _insert_runs(self):
 
@@ -206,11 +248,14 @@ class DbManager():
 
         for perf in current_perfdata:
 
-            #if warning or critical are empty, then we dont have to compare warning or critical column
+            #if warning or critical or timeout are empty, then we dont have to compare warning or critical column
             if perf.warning_threshold == "" or perf.warning_threshold is None and total_null > 0:
                 total_null -= 1
 
             if perf.critical_threshold == "" or perf.critical_threshold is None and total_null > 0:
+                total_null -= 1
+
+            if perf.timeout_threshold == "" or perf.timeout_threshold is None and total_null > 0:
                 total_null -= 1
 
         if last_rows is not None:
@@ -222,13 +267,13 @@ class DbManager():
         query = "INSERT INTO thresholds (start_time"
 
         for perf in current_perfdata:
-            query = query + ", " + perf.name + "_warn, " + perf.name + "_crit"
+            query = query + ", " + perf.name + "_warn, " + perf.name + "_crit, " + perf.name + "_tout"
         query = query + ") VALUES (" + str(start_time)
 
         different_from_last = self._db_is_new
 
         #check if perfdata items of current run are > (or <) than last row columns
-        if len(current_perfdata) * 2 != (total_columns - total_null):
+        if len(current_perfdata) * 3 != (total_columns - total_null):
             different_from_last = True
 
         for perf in self._perf_manager.get_all_perfdata():
@@ -249,6 +294,15 @@ class DbManager():
             else:
                 query = query + ", null"
                 if last_rows is not None and last_rows[perf.name + "_crit"] is not None:
+                    different_from_last = True
+
+            if perf.timeout_threshold is not None and perf.timeout_threshold != "":
+                query = query + ", " + str(int(perf.timeout_threshold * 1000))
+                if last_rows is not None and last_rows[perf.name + "_tout"] != int(perf.timeout_threshold * 1000):
+                    different_from_last = True
+            else:
+                query = query + ", null"
+                if last_rows is not None and last_rows[perf.name + "_tout"] is not None:
                     different_from_last = True
 
         if different_from_last is True:
@@ -301,13 +355,51 @@ class DbManager():
             query = query + ")"
             self._cursor.execute(query)
 
+    def _insert_timestamp(self):
+
+        # check and add new columns
+        self._check_timestamp_columns()
+
+        start_time = self._info_manager.get_info("START TIME")
+        query = "INSERT INTO timestamp (start_time"
+        for perf in self._perf_manager.get_all_perfdata():
+            query = query + ", " + perf.name + "_time"
+        query = query + ") VALUES (" + str(start_time)
+
+        for perf in self._perf_manager.get_all_perfdata():
+            if perf.timestamp is not None and perf.timestamp != "":
+                query = query + ", " + str(perf.timestamp)
+            else:
+                query = query + ", null"
+
+        query += ")"
+        self._cursor.execute(query)
+
     def store_perfdata(self, dbname=None):
 
         if dbname != None and dbname != "":
-            self._db_home = os.path.split(dbname)[0]
-            self._db_name = os.path.split(dbname)[1]
+            self._db_home = os.path.split(str(dbname))[0]
 
-            self._info_manager.set_info("DB FILE", self._db_home + os.sep + self._db_name)
+            if os.path.split(str(dbname))[1] != "":
+                self._db_name = os.path.split(str(dbname))[1]
+
+            name, file_extension = os.path.splitext(self._db_name)
+
+            if file_extension != "":
+                if file_extension != ".db" and file_extension != ".db3" and file_extension != ".sqlite"\
+                        and file_extension != ".sqlite3":
+                    raise Exception('file extension must be db or db3 or sqlite or sqlite3!')
+            else:
+                file_extension = ".db"
+
+                self._db_name = self._db_name + file_extension
+
+            if self._db_home == "" and self._info_manager.get_info("ROBOT CONTEXT") is True:
+                self._db_home = os.path.dirname(os.path.abspath(self._info_manager.get_info("SUITE SOURCE")))
+            elif self._db_home == "":
+                self._db_home = os.path.split(sys.executable)[0] + os.sep + "share" + os.sep + "alyvix"
+
+        self._info_manager.set_info("DB FILE", self._db_home + os.sep + self._db_name)
 
         #if not os.path.isfile(self._db_home + os.sep + self._db_name):
         if not os.path.isdir(self._db_home):
@@ -321,17 +413,20 @@ class DbManager():
             self._db_is_new = True
         else:
             self.connect()
+            self._create_tables()
 
         self._insert_runs()
         self._insert_thresholds()
         self._insert_sorting()
+        self._insert_timestamp()
 
         self.close()
 
     def publish_perfdata(self, type="csv", start_date=None, end_date=None, filename=None,
-                         testcase_name=None, max_age=24):
+                         testcase_name=None, max_age=24, suffix=None, subject=None, server=None, port=None,
+                         measurement="alyvix", max_reconnect_attempts=5, reconnect_time_wait=2):
 
-        if type == "perfmon":
+        if type.lower() == "perfmon":
             try:
                 full_file_name = get_python_lib() + os.sep + "alyvix" + os.sep + "extra" + os.sep + "alyvixservice.ini"
 
@@ -388,7 +483,7 @@ class DbManager():
             except:
                 pass
 
-        if type == "csv":
+        elif type.lower() == "csv":
 
             start_date_dt = None
             end_date_dt = None
@@ -404,6 +499,37 @@ class DbManager():
                     end_date_dt = datetime.datetime.strptime(end_date, fmt)
                 except ValueError:
                     pass
+
+            if end_date_dt is None:
+                try:
+                    if end_date.lower() == "now":
+                        end_date_dt = datetime.datetime.now()
+                except:
+                    pass
+
+            if start_date_dt is None:
+
+                if "days" in start_date:
+
+                    try:
+                        d_start_day = start_date.replace("days", "")
+                        d_start_day = d_start_day.replace(" ", "")
+                        d_start_day = int(d_start_day)
+
+                        delta_date = datetime.datetime.today() - datetime.timedelta(days=d_start_day)
+                        start_date_dt = delta_date
+                    except:
+                        pass
+                elif "hours" in start_date:
+                    try:
+                        h_start_day = start_date.replace("hours", "")
+                        h_start_day = h_start_day.replace(" ", "")
+                        h_start_day = int(h_start_day)
+
+                        delta_date = datetime.datetime.today() - datetime.timedelta(hours=h_start_day)
+                        start_date_dt = delta_date
+                    except:
+                        pass
 
             if start_date_dt is None:
                 raise Exception('invalid start date!')
@@ -421,24 +547,51 @@ class DbManager():
                 self._db_home = os.path.split( self._info_manager.get_info("DB FILE"))[0]
                 self._db_name = os.path.split( self._info_manager.get_info("DB FILE"))[1]
 
+            try:
+                if os.path.isfile(db_file) is False:
+                    return
+            except:
+                return
+
+            if self._info_manager.get_info("ROBOT CONTEXT") is True:
+                csv_default_home = os.path.dirname(os.path.abspath(self._info_manager.get_info("SUITE SOURCE")))
+                csv_default_name = self._info_manager.get_info("SUITE NAME").lower().replace(" ","_") + ".csv"
+            else:
+                csv_default_home = os.path.split(sys.executable)[0] + os.sep + "share" + os.sep + "alyvix"
+                csv_default_name = "alyvix_data.csv"
 
             csv_name = filename
 
             if csv_name is None or filename == "":
-                csv_home = os.path.split(sys.executable)[0] + os.sep + "share" + os.sep + "alyvix"
-                csv_name = "alyvix_data"
 
-                if self._info_manager.get_info("ROBOT CONTEXT") is True:
+                csv_name = csv_default_home + os.sep + csv_default_name
 
-                    csv_home = os.path.dirname(os.path.abspath(self._info_manager.get_info("SUITE SOURCE")))
+            else:
 
-                    csv_name = self._info_manager.get_info("SUITE NAME")
+                path_and_name, file_extension = os.path.splitext(csv_name)
 
-                csv_name = csv_home + os.sep + csv_name + ".csv"
+                if file_extension != "":
+                    if file_extension != ".csv":
+                        raise Exception('file extension must be csv!')
+                else:
+                    file_extension = ".csv"
 
+                path = os.path.dirname(path_and_name)
 
-            csv_file = open(csv_name, 'w')
-            csv_writer = csv.writer(csv_file)
+                if path == "":
+                    path = csv_default_home
+                    path_and_name = path + os.sep + path_and_name
+                    csv_name = path_and_name + file_extension
+                elif path + os.sep == path_and_name:
+                    csv_name = path_and_name + csv_default_name
+                else:
+                    csv_name = path_and_name + file_extension
+
+            if suffix is not None and suffix != 'None':
+                if suffix.lower() == "timestamp":
+                    csv_name = csv_name.replace(".csv", "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + ".csv")
+                else:
+                    raise Exception('invalid suffix type!')
 
             self.connect()
 
@@ -458,14 +611,20 @@ class DbManager():
                 value = last_sorting_rows[key]
 
                 if value is not None:
-                    perf_to_query.append(key.replace("_index", ""))
+                    new_value = 999999
+                    if value != -1:
+                        new_value = value
+
+                    perf_to_query.append((key.replace("_index", ""), new_value))
+
+            perf_to_query = sorted(perf_to_query, key=lambda x: x[1])
 
             query = "select datetime(start_time, 'unixepoch','localtime') as start_time"
 
             for column in perf_to_query:
-                query = query + ", " + column
+                query = query + ", " + column[0]
 
-            query = query + " from runs where CAST(strftime('%s', datetime(start_time, 'unixepoch', 'localtime')) AS INT) between CAST(strftime('%s', '" + start_date + "') AS INT) and CAST(strftime('%s', '" + end_date + "') AS INT)"
+            query = query + " from runs where CAST(strftime('%s', datetime(start_time, 'unixepoch', 'localtime')) AS INT) between CAST(strftime('%s', '" + start_date_dt.strftime("%Y-%m-%d %H:%M:%S") + "') AS INT) and CAST(strftime('%s', '" + end_date_dt.strftime("%Y-%m-%d %H:%M:%S") + "') AS INT)"
 
             rows = self._cursor.execute(query).fetchall()
 
@@ -473,7 +632,10 @@ class DbManager():
             csv_header.append("start_time")
 
             for perf_column in perf_to_query:
-                csv_header.append(perf_column)
+                csv_header.append(perf_column[0])
+
+            csv_file = open(csv_name, 'w')
+            csv_writer = csv.writer(csv_file, lineterminator='\n')
 
             csv_writer.writerow(csv_header)
 
@@ -488,11 +650,37 @@ class DbManager():
                 csv_row.append(row["start_time"])
 
                 for perf_column in perf_to_query:
-                    csv_row.append(row[perf_column])
+                    csv_row.append(row[perf_column[0]])
 
                 csv_writer.writerow(csv_row)
 
             self.close()
 
             csv_file.close()
+        elif type.lower() == "nats":
+            nm = NatsManager()
 
+            #perfdata_list = self._perf_manager.get_all_perfdata()
+
+            if server is None or server == "":
+                raise Exception('the server value cannot be empty!')
+
+            if port is None or port == "":
+                port = 4222
+
+            if subject is None or subject == "":
+                raise Exception('the subject value cannot be empty!')
+
+            if testcase_name is None or testcase_name == "":
+                testcase_name = self._info_manager.get_info('TEST CASE NAME')
+
+            if testcase_name is None or testcase_name == "":
+                testcase_name = self._info_manager.get_info('SUITE NAME')
+
+            if testcase_name is None or testcase_name == "":
+                raise Exception('invalid testcase name!')
+
+            nm.publish(testcase_name, subject, server, str(port), measurement=measurement,
+                max_reconnect_attempts=max_reconnect_attempts, reconnect_time_wait=reconnect_time_wait)
+        else:
+            raise Exception('invalid publish perf output type!')

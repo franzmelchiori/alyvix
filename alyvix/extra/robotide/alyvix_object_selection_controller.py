@@ -23,33 +23,62 @@ import os
 import time
 import cv2
 
-from PyQt4.QtGui import QApplication, QDialog, QCursor, QImage, QPixmap, QListWidgetItem
+from PyQt4.QtGui import QApplication, QDialog, QCursor, QImage, QPixmap, QListWidgetItem, QMessageBox
 from PyQt4.QtCore import Qt, QThread, SIGNAL, QTimer, QUrl, QString, QRect
 
 from PyQt4.QtWebKit import QWebSettings
 
 from alyvix_object_selection_view import Ui_Form
 from alyvix_rect_finder_view import AlyvixRectFinderView
+from alyvix_rect_finder_view import AlyvixRectFinderPropertiesView
 from alyvix_image_finder_view import AlyvixImageFinderView
+from alyvix_image_finder_view import AlyvixImageFinderPropertiesView
 from alyvix_text_finder_view import AlyvixTextFinderView
+from alyvix_text_finder_view import AlyvixTextFinderPropertiesView
 from alyvix_object_finder_view import AlyvixObjectFinderView
 from alyvix_code_view import AlyvixCustomCodeView
 
 from alyvix.tools.screen import ScreenManager
+from alyvix.tools.configreader import ConfigReader
+from alyvix.tools.info import InfoManager
 
 from stat import S_ISREG, ST_CTIME, ST_MODE
 
 import shutil
+from distutils.sysconfig import get_python_lib
+
 
 class AlyvixMainMenuController(QDialog, Ui_Form):
 
     def __init__(self):
         QDialog.__init__(self)
 
+        info_manager = InfoManager()
+        self.scaling_factor = info_manager.get_info("SCALING FACTOR FLOAT")
+
         # Set up the user interface from Designer.
         self.setupUi(self)
-        
-        self.setFixedSize(self.size())
+
+        self.setFixedSize(int(self.frameGeometry().width() * self.scaling_factor),
+                          int(self.frameGeometry().height() * self.scaling_factor))
+
+        self.label.setGeometry(QRect(int(8*self.scaling_factor), int(7*self.scaling_factor),
+                                     int(211*self.scaling_factor), int(16*self.scaling_factor)))
+
+        self.pushButtonNew.setGeometry(QRect(int(8*self.scaling_factor), int(235*self.scaling_factor)
+                                             , int(60*self.scaling_factor), int(23*self.scaling_factor)))
+        self.pushButtonEdit.setGeometry(QRect(int(80*self.scaling_factor), int(235*self.scaling_factor),
+                                              int(60*self.scaling_factor), int(23*self.scaling_factor)))
+        self.pushButtonRemove.setGeometry(QRect(int(151*self.scaling_factor), int(235*self.scaling_factor),
+                                                int(75*self.scaling_factor), int(23*self.scaling_factor)))
+
+        self.listWidgetAlyObj.setGeometry(QRect(int(8*self.scaling_factor), int(28*self.scaling_factor),
+                                                int(218*self.scaling_factor), int(191*self.scaling_factor)))
+
+        self.spinBoxDelay.setGeometry(QRect(int(184*self.scaling_factor), int(332*self.scaling_factor),
+                                            int(42*self.scaling_factor), int(22*self.scaling_factor)))
+        self.label_2.setGeometry(QRect(int(135*self.scaling_factor), int(333*self.scaling_factor),
+                                       int(37*self.scaling_factor), int(20*self.scaling_factor)))
 
         #self.setWindowTitle('Application Object Properties')
         self.setWindowFlags(Qt.WindowCloseButtonHint | Qt.WindowStaysOnTopHint)
@@ -144,9 +173,17 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
 
         template_path = self.path + os.sep + str(self.xml_name).replace("_ImageFinder.xml","")
         
+        ##tttttttttt
+        
         if os.path.exists(template_path):
             shutil.rmtree(template_path)
         #self.update_list()
+        
+        extra_path = get_python_lib() + os.sep + "alyvix" + os.sep + "robotproxy" + os.sep + self.path.split(os.sep)[-1] + "_extra"
+        scraper_path = extra_path + os.sep + str(self.xml_name).replace("_TextFinder.xml","")
+        
+        if os.path.exists(scraper_path):
+            shutil.rmtree(scraper_path)
         
         item = self.listWidgetAlyObj.takeItem(selected_index)
         self.listWidgetAlyObj.removeItemWidget(item)
@@ -184,6 +221,10 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
         for cdate, path in sorted(entries):
             filename = os.path.basename(path)
             
+            extra_path = get_python_lib() + os.sep + "alyvix" + os.sep + "robotproxy" + os.sep + self.path.split(os.sep)[-1] + "_extra"
+            
+            #print extra_path + os.sep + filename
+            
             if os.path.exists(self.path + os.sep + "lock_list.xml"):
                 if "<name>" + filename + "</name>" in string:
                     continue
@@ -194,9 +235,15 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
                 elif filename.endswith('_ImageFinder.xml'):
                     item.setText(filename[:-16] + " [IF]")
                 elif filename.endswith("_TextFinder.xml"):
-                    item.setText(filename[:-15] + " [TF]")
+                    if os.path.exists(extra_path + os.sep + filename.replace("_TextFinder.xml","") + os.sep + "scraper.txt"):
+                        item.setText(filename[:-15] + " [TS]")
+                    else:
+                        item.setText(filename[:-15] + " [TF]")
                 elif filename.endswith('_ObjectFinder.xml'):
-                    item.setText(filename[:-17] + " [OF]")
+                    if os.path.exists(path.replace("_ObjectFinder.xml","_ObjectFinder.alyscraper")):
+                        item.setText(filename[:-17] + " [OS]")
+                    else:
+                        item.setText(filename[:-17] + " [OF]")
                 elif filename.endswith('_CustomCode.xml'):
                     item.setText(filename[:-15] + " [CC]")
                     
@@ -236,7 +283,8 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
         self.spinBoxDelay.hide()
         self.label_2.hide()
         
-        self.listWidgetAlyObj.setGeometry(QRect(8, 28, 218, 181))
+        self.listWidgetAlyObj.setGeometry(QRect(int(8*self.scaling_factor), int(28*self.scaling_factor),
+                                                int(218*self.scaling_factor), int(181*self.scaling_factor)))
         self.pushButtonEdit.show()
         self.pushButtonNew.show()
         self.pushButtonRemove.show()
@@ -245,11 +293,15 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
 
         #self.spinBoxDelay.setGeometry(QRect(62, 500, 111, 23))
         
-        self.label_2.setGeometry(QRect(135, 333, 37, 20))
+        self.label_2.setGeometry(QRect(int(135*self.scaling_factor), int(333*self.scaling_factor),
+                                       int(37*self.scaling_factor), int(20*self.scaling_factor)))
         self.spinBoxDelay.setGeometry(QRect(184, 332, 42, 22))
         
-        self.gridLayoutWidget.setGeometry(QRect(8, 330, 218, 177))
-        self.pushButtonCancel.setGeometry(QRect(62, 500, 111, 23))
+        self.gridLayoutWidget.setGeometry(QRect(int(8*self.scaling_factor), int(330*self.scaling_factor),
+                                                int(218*self.scaling_factor), int(177*self.scaling_factor)))
+
+        self.pushButtonCancel.setGeometry(QRect(int(62*self.scaling_factor), int(500*self.scaling_factor),
+                                                int(111*self.scaling_factor), int(23*self.scaling_factor)))
     
     def add_item(self):
     
@@ -264,11 +316,15 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
         self.spinBoxDelay.show()
         self.label_2.show()
         
-        self.label_2.setGeometry(QRect(135, 12, 37, 20))
-        self.spinBoxDelay.setGeometry(QRect(182, 10, 42, 22))
+        self.label_2.setGeometry(QRect(int(135*self.scaling_factor), int(12*self.scaling_factor),
+                                       int(37*self.scaling_factor), int(20*self.scaling_factor)))
+        self.spinBoxDelay.setGeometry(QRect(int(182*self.scaling_factor), int(10*self.scaling_factor),
+                                            int(42*self.scaling_factor), int(22*self.scaling_factor)))
         
-        self.gridLayoutWidget.setGeometry(QRect(8, 38, 218, 197))
-        self.pushButtonCancel.setGeometry(QRect(62, 235, 111, 23))
+        self.gridLayoutWidget.setGeometry(QRect(int(8*self.scaling_factor), int(38*self.scaling_factor),
+                                                int(218*self.scaling_factor), int(197*self.scaling_factor)))
+        self.pushButtonCancel.setGeometry(QRect(int(62*self.scaling_factor), int(235*self.scaling_factor),
+                                                int(111*self.scaling_factor), int(23*self.scaling_factor)))
         
                     
     def edit_item(self):
@@ -284,7 +340,9 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
         #print selected_item_data
         
         if self.xml_name.endswith("_ObjectFinder.xml"):
+            #info_manager = InfoManager()
             self.hide()
+            #self.scaling_factor = info_manager.get_info("SCALING FACTOR FLOAT")
             time.sleep(0.600)
             self.alyvix_finder_controller = AlyvixObjectFinderView(self)
             self.alyvix_finder_controller.show()
@@ -296,9 +354,9 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
             self.alyvix_finder_controller = AlyvixCustomCodeView(self)
             self.alyvix_finder_controller.show()
             return
-
-        screen_manager = ScreenManager()
+        #info_manager = InfoManager()
         self.hide()
+        #self.scaling_factor = info_manager.get_info("SCALING FACTOR FLOAT")
         time.sleep(0.600)
         img_color = cv2.imread(str(self.xml_name).replace("xml","png")) #screen_manager.grab_desktop(screen_manager.get_color_mat)
         #print "imgggg", self.path + os.sep + self.xml_name
@@ -315,10 +373,34 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
         #self.alyvix_rect_finder_controller.set_path(self.full_file_name)
         self.alyvix_finder_controller.set_bg_pixmap(image)
         self.alyvix_finder_controller.showFullScreen()
+        
+                
+        try:
+            if self.alyvix_finder_controller._main_rect_finder is not None:
+                self.alyvix_finder_controller.rect_view_properties = AlyvixRectFinderPropertiesView(self.alyvix_finder_controller)
+                self.alyvix_finder_controller.rect_view_properties.show()
+        except:
+            pass
+            
+        try:
+            if self.alyvix_finder_controller._main_text is not None:
+                self.alyvix_finder_controller.image_view_properties = AlyvixTextFinderPropertiesView(self.alyvix_finder_controller)
+                self.alyvix_finder_controller.image_view_properties.show()
+        except:
+            pass
+            
+        try:
+            if self.alyvix_finder_controller._main_template is not None:
+                self.alyvix_finder_controller.image_view_properties = AlyvixImageFinderPropertiesView(self.alyvix_finder_controller)
+                self.alyvix_finder_controller.image_view_properties.show()
+        except:
+            pass
  
     def add_new_item_on_list(self): 
     
         #self.update_list()
+
+        extra_path = get_python_lib() + os.sep + "alyvix" + os.sep + "robotproxy" + os.sep + self.path.split(os.sep)[-1] + "_extra"
     
         dirpath = self.path
 
@@ -351,7 +433,9 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
         #print filename
         #print cdate
         
-        print filename
+        #print extra_path + os.sep + filename
+        
+        #print filename
         item = QListWidgetItem()
 
         if filename.endswith('_RectFinder.xml'):
@@ -359,9 +443,15 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
         elif filename.endswith('_ImageFinder.xml'):
             item.setText(filename[:-16] + " [IF]")
         elif filename.endswith("_TextFinder.xml"):
-            item.setText(filename[:-15] + " [TF]")
+            if os.path.exists(extra_path + os.sep + filename.replace("_TextFinder.xml","") + os.sep + "scraper.txt"):
+                item.setText(filename[:-15] + " [TS]")
+            else:
+                item.setText(filename[:-15] + " [TF]")
         elif filename.endswith("_ObjectFinder.xml"):
-            item.setText(filename[:-17] + " [OF]")
+            if os.path.exists(path.replace("_ObjectFinder.xml","_ObjectFinder.alyscraper")):
+                item.setText(filename[:-17] + " [OS]")
+            else:
+                item.setText(filename[:-17] + " [OF]")
         elif filename.endswith("_CustomCode.xml"):
             item.setText(filename[:-15] + " [CC]")
         """
@@ -401,6 +491,7 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
         self.alyvix_rect_finder_controller = AlyvixRectFinderView(self)
         self.alyvix_rect_finder_controller.set_bg_pixmap(image)
         self.alyvix_rect_finder_controller.showFullScreen()
+          
         
     def open_imagefinder_view(self):
         self.xml_name = None
@@ -433,7 +524,6 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
     def open_objectfinder_controller(self):
         self.xml_name = None
         self.restore_view()
-        #screen_manager = ScreenManager()
         self.hide()
         self.sleep_before_action()
         time.sleep(0.600)
@@ -463,6 +553,22 @@ class AlyvixMainMenuController(QDialog, Ui_Form):
 if __name__ == "__main__":
 
     app = QApplication(sys.argv)
-    window = AlyvixMainMenuController()
-    window.show()
+    screen_manager = ScreenManager()
+    config_reader = ConfigReader()
+    if config_reader.get_bg_res_check() == True:
+        if screen_manager.is_resolution_ok() is False:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Critical)
+            msg.setText("Alyvix Background Service is installed but the screen resolution doesn't match with the config file")
+            #msg.setInformativeText("This is additional information")
+            msg.setWindowTitle("Error")
+            #msg.setDetailedText("The details are as follows:")
+            msg.show()
+        else:
+            window = AlyvixMainMenuController()
+            window.show()
+    else:
+        window = AlyvixMainMenuController()
+        window.show()
+
     sys.exit(app.exec_())
